@@ -1,4 +1,4 @@
-# main.py (V3.1.3 修复初始化属性错误)
+# main.py (V3.1.1 修复命名空间冲突)
 
 import psutil
 import datetime
@@ -10,27 +10,27 @@ from dataclasses import dataclass, field
 
 # 导入 AstrBot 官方 API
 from astrbot.api.star import Star, register, Context
+# ===================================================================
+# 核心修正：使用 'as' 关键字为导入的 filter 模块指定别名，避免与内置函数冲突
 from astrbot.api.event import filter as event_filter, AstrMessageEvent
+# ===================================================================
 from astrbot.api import logger, AstrBotConfig
 
-# --- Data Models ---
+# --- 数据契约 ---
 @dataclass(frozen=True)
 class DiskUsage:
-    """封装单个磁盘分区的使用情况。"""
     path: str; total: int; used: int; percent: float
 
 @dataclass(frozen=True)
 class SystemMetrics:
-    """封装插件内部流转的核心系统指标数据。"""
     cpu_percent: float; cpu_temp: Optional[float]
     mem_total: int; mem_used: int; mem_percent: float
     net_sent: int; net_recv: int
     uptime: datetime.timedelta
     disks: List[DiskUsage] = field(default_factory=list)
 
-# --- Logic Modules ---
+# --- 数据采集器 ---
 class MetricsCollector:
-    """负责所有与操作系统交互的数据采集任务。"""
     def __init__(self, config: AstrBotConfig):
         self.config = config
         try: self.boot_time = datetime.datetime.fromtimestamp(psutil.boot_time())
@@ -62,13 +62,16 @@ class MetricsCollector:
             disks=self._get_disk_usages()
         )
 
+# --- 文本格式化器 ---
 class MetricsFormatter:
-    """负责将 SystemMetrics 数据对象格式化为人类可读的文本。"""
     _BYTE_LABELS: Dict[int, str] = {0: ' B', 1: ' KB', 2: ' MB', 3: ' GB', 4: ' TB'}
     def format(self, metrics: SystemMetrics) -> str:
-        parts = ["💻 **服务器实时状态**", "--------------------", self._format_uptime(metrics.uptime), self._format_cpu(metrics),
-                 self._format_memory(metrics), self._format_disks(metrics.disks), self._format_network(metrics)]
-        return "\n".join(filter(None, parts))
+        parts = [
+            "💻 **服务器实时状态**", "--------------------", self._format_uptime(metrics.uptime),
+            self._format_cpu(metrics), self._format_memory(metrics), self._format_disks(metrics.disks),
+            self._format_network(metrics),
+        ]
+        return "\n".join(filter(None, parts)) # 这里的 filter 现在是安全的，指向Python内置函数
     def _format_uptime(self, uptime: datetime.timedelta) -> str:
         days, rem = divmod(uptime.total_seconds(), 86400); hours, rem = divmod(rem, 3600); minutes, _ = divmod(rem, 60)
         return f"⏱️ **已稳定运行**: {int(days)}天 {int(hours)}小时 {int(minutes)}分钟"
@@ -84,30 +87,34 @@ class MetricsFormatter:
         return f"""--------------------\n🌐 **网络I/O (自启动)**\n   - **总上传**: {self._format_bytes(m.net_sent)}\n   - **总下载**: {self._format_bytes(m.net_recv)}"""
     @classmethod
     def _format_bytes(cls, byte_count: int) -> str:
-        if byte_count is None: return "N/A"; power, n = 1024, 0
+        if byte_count is None: return "N/A"
+        power, n = 1024, 0
         while byte_count >= power and n < len(cls._BYTE_LABELS) - 1: byte_count /= power; n += 1
         return f"{byte_count:.2f}{cls._BYTE_LABELS[n]}"
 
-# --- Plugin Entry Point ---
+# --- AstrBot 插件主类 (协调器) ---
 @register(
     name="astrabot_plugin_status", 
     author="riceshowerx", 
-    desc="以文本形式查询服务器的实时状态。", 
-    version="3.1.3",
+    desc="以文本形式查询服务器的实时状态 (单文件S级架构)", 
+    version="3.1.1", # 版本号提升
     repo="https://github.com/riceshowerX/astrbot_plugin_status"
 )
 class ServerStatusPlugin(Star):
-    """主插件类，作为协调器粘合数据采集和格式化模块，并与 AstrBot 框架交互。"""
     CACHE_DURATION: int = 5
     def __init__(self, context: Context, config: Optional[AstrBotConfig] = None):
         super().__init__(context)
-        self.context = context; self.config = config if config is not None else AstrBotConfig({})
-        self.collector = MetricsCollector(self.config); self.formatter = MetricsFormatter()
+        self.context, self.config = context, config if config is not None else AstrBotConfig({})
+        self.collector, self.formatter = MetricsCollector(self.config), MetricsFormatter()
         self._cache: Optional[str] = None; self._cache_timestamp: float = 0.0
+        logger.info("服务器状态插件(v3.1.1)已成功加载。")
 
+    # ===================================================================
+    # 核心修正：使用别名 event_filter 来调用 command 装饰器
+    # ===================================================================
     @event_filter.command("status", alias={"服务器状态", "状态", "zt", "s"})
     async def handle_server_status(self, event: AstrMessageEvent):
-        """处理用户的状态查询指令。"""
+        '''查询并显示当前服务器的详细运行状态'''
         now = time.time()
         if self._cache and (now - self._cache_timestamp < self.CACHE_DURATION):
             logger.info("从缓存中提供服务器状态。"); await event.send(event.plain_result(self._cache)); return
@@ -121,4 +128,4 @@ class ServerStatusPlugin(Star):
             await event.send(event.plain_result(text_message))
         except Exception as e:
             logger.error(f"处理 status 指令时发生未知错误: {e}", exc_info=True)
-            await event.send(event.plain_result("抱歉，在处理指令时发生未知错误。"))
+            await event.send(event.plain_result(f"抱歉，获取状态时出现未知错误，请联系管理员。"))
