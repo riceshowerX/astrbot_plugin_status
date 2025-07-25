@@ -1,0 +1,14 @@
+{
+  "disk_paths": {
+    "description": "要监控的磁盘路径列表 (留空则自动发现)",
+    "type": "list",
+    "hint": "例如: [\"/\", \"/home\"] (Linux) 或 [\"C:\", \"D:\"] (Windows)。如果列表为空，插件将尝试自动发现所有物理分区。",
+    "default": []
+  },
+  "show_temp": {
+    "description": "是否显示CPU温度",
+    "type": "bool",
+    "hint": "仅在部分受支持的Linux系统上有效，如果无法获取，将自动隐藏。",
+    "default": true
+  }
+}
