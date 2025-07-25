@@ -1,10 +1,11 @@
-# main.py (V1.5.1 修正图片发送API错误)
+# main.py (V1.5.2 修正图片发送API错误，使用临时文件策略)
 
 import psutil
 import datetime
 import platform
 import asyncio
 import io
+import uuid # 用于生成唯一文件名
 from typing import Dict, Any, Optional
 from pathlib import Path
 
@@ -15,11 +16,7 @@ from PIL import Image, ImageDraw, ImageFont
 from astrbot.api.star import Star, register, Context
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api import logger, AstrBotConfig
-# ===================================================================
-# 核心修正：导入用于构建消息链的 message_components
-# ===================================================================
 import astrbot.api.message_components as Comp
-# ===================================================================
 
 # --- 插件主类 ---
 
@@ -27,7 +24,7 @@ import astrbot.api.message_components as Comp
     name="astrabot_plugin_status", 
     author="riceshowerx", 
     desc="以图片形式查询服务器的实时状态 (高速版)", 
-    version="1.5.1", # 版本号提升
+    version="1.5.2", # 版本号提升
     repo="https://github.com/riceshowerX/astrbot_plugin_status"
 )
 class ServerStatusPlugin(Star):
@@ -35,6 +32,9 @@ class ServerStatusPlugin(Star):
         super().__init__(context)
         self.context = context
         self.config = config if config is not None else AstrBotConfig({})
+        # 创建一个用于存放临时图片的目录
+        self.temp_dir = Path(__file__).parent / "tmp"
+        self.temp_dir.mkdir(exist_ok=True)
         try:
             self.boot_time = datetime.datetime.fromtimestamp(psutil.boot_time())
         except Exception as e:
@@ -46,16 +46,17 @@ class ServerStatusPlugin(Star):
                 self.font_main = ImageFont.truetype(str(font_file), 24)
                 self.font_small = ImageFont.truetype(str(font_file), 18)
             except Exception as e:
-                logger.warning(f"加载字体文件失败，将使用默认字体: {e}"); self._load_default_fonts()
+                logger.warning(f"加载字体文件失败: {e}"); self._load_default_fonts()
         else:
             logger.info("未找到 font.ttf，将使用默认字体。"); self._load_default_fonts()
-        logger.info("服务器状态插件(v1.5.1)已成功加载，使用Pillow高速渲染。")
+        logger.info("服务器状态插件(v1.5.2)已成功加载。")
 
     def _load_default_fonts(self):
         self.font_title = ImageFont.load_default(); self.font_main = ImageFont.load_default(); self.font_small = ImageFont.load_default()
 
     def get_system_stats(self) -> Dict[str, Any]:
-        stats = {'disks': []}
+        # ... (此函数无需改动，为简洁省略) ...
+        stats = {'disks': []};
         try: stats['cpu_percent'] = psutil.cpu_percent(interval=1)
         except Exception as e: logger.warning(f"获取 CPU 使用率失败: {e}"); stats['cpu_percent'] = 0
         stats['cpu_temp'] = None
@@ -79,6 +80,7 @@ class ServerStatusPlugin(Star):
         return stats
 
     def process_stats(self, raw_stats: Dict[str, Any]) -> Dict[str, Any]:
+        # ... (此函数无需改动，为简洁省略) ...
         processed = raw_stats.copy(); uptime = datetime.datetime.now() - self.boot_time
         days, rem = divmod(uptime.total_seconds(), 86400); hours, rem = divmod(rem, 3600); minutes, _ = divmod(rem, 60)
         processed['uptime_str'] = f"{int(days)}天 {int(hours)}小时 {int(minutes)}分钟"
@@ -89,12 +91,11 @@ class ServerStatusPlugin(Star):
         return processed
 
     async def render_status_with_pillow(self, data: Dict[str, Any]) -> io.BytesIO:
-        W, H = 600, 280
-        H += len(data.get('disks_str', [])) * 70
+        # ... (此函数无需改动，为简洁省略) ...
+        W, H = 600, 280; H += len(data.get('disks_str', [])) * 70
         BG_COLOR, TEXT_COLOR, BAR_BG, BAR_COLOR = "#ffffff", "#1f2937", "#e5e7eb", "#4f46e5"
-        img = Image.new("RGB", (W, H), BG_COLOR)
-        draw = ImageDraw.Draw(img)
-        y = 30; draw.text((W/2, y), "服务器实时状态", font=self.font_title, fill=TEXT_COLOR, anchor="ms"); y += 50
+        img = Image.new("RGB", (W, H), BG_COLOR); draw = ImageDraw.Draw(img); y = 30
+        draw.text((W/2, y), "服务器实时状态", font=self.font_title, fill=TEXT_COLOR, anchor="ms"); y += 50
         def draw_item(label, value, percent):
             nonlocal y
             draw.text((40, y), label, font=self.font_main, fill=TEXT_COLOR)
@@ -116,6 +117,8 @@ class ServerStatusPlugin(Star):
     @filter.command("status", alias={"服务器状态", "状态", "zt", "s"})
     async def handle_server_status(self, event: AstrMessageEvent):
         '''查询并显示当前服务器的详细运行状态 (Pillow高速版)'''
+        # 提前定义临时文件路径变量，以备 finally 块使用
+        temp_filepath = None
         try:
             await event.send(event.plain_result("正在生成状态图，请稍候..."))
             
@@ -125,21 +128,35 @@ class ServerStatusPlugin(Star):
             image_buffer = await self.render_status_with_pillow(processed_data)
             
             # ===================================================================
-            # 核心修正：使用标准的消息链方式发送内存中的图片数据
+            # 核心修正：实现“临时文件”策略
             # ===================================================================
-            # 1. 用内存中的图片数据创建一个 Image 组件
-            image_component = Comp.Image(file=image_buffer)
-            # 2. 创建一个消息结果对象
+            # 1. 生成一个唯一的临时文件名
+            temp_filename = f"status_{uuid.uuid4()}.png"
+            temp_filepath = self.temp_dir / temp_filename
+            
+            # 2. 将内存中的图片数据写入临时文件
+            with open(temp_filepath, "wb") as f:
+                f.write(image_buffer.getvalue())
+
+            # 3. 使用临时文件的路径（字符串）创建 Image 组件
+            image_component = Comp.Image(file=str(temp_filepath))
+            
+            # 4. 构建并发送消息
             message_to_send = event.make_result()
-            # 3. 将图片组件放入消息链中
             message_to_send.chain = [image_component]
-            # 4. 发送最终构建好的消息
             await event.send(message_to_send)
             # ===================================================================
 
         except Exception as e:
             logger.error(f"处理 status 指令时发生未知错误: {e}", exc_info=True)
             await event.send(event.plain_result(f"抱歉，生成状态图时出现错误，请联系管理员。"))
+        finally:
+            # 5. (关键) 无论成功还是失败，都尝试删除临时文件
+            if temp_filepath and temp_filepath.exists():
+                try:
+                    temp_filepath.unlink()
+                except Exception as e:
+                    logger.warning(f"删除临时文件 {temp_filepath} 失败: {e}")
     
     @staticmethod
     def _format_bytes(byte_count: int) -> str:
