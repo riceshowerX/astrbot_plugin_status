@@ -1,4 +1,4 @@
-# main.py (V1.5 性能与体验升级版)
+# main.py (V1.5.1 修正图片发送API错误)
 
 import psutil
 import datetime
@@ -15,6 +15,11 @@ from PIL import Image, ImageDraw, ImageFont
 from astrbot.api.star import Star, register, Context
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api import logger, AstrBotConfig
+# ===================================================================
+# 核心修正：导入用于构建消息链的 message_components
+# ===================================================================
+import astrbot.api.message_components as Comp
+# ===================================================================
 
 # --- 插件主类 ---
 
@@ -22,7 +27,7 @@ from astrbot.api import logger, AstrBotConfig
     name="astrabot_plugin_status", 
     author="riceshowerx", 
     desc="以图片形式查询服务器的实时状态 (高速版)", 
-    version="1.5.0", # 版本号提升
+    version="1.5.1", # 版本号提升
     repo="https://github.com/riceshowerX/astrbot_plugin_status"
 )
 class ServerStatusPlugin(Star):
@@ -30,15 +35,10 @@ class ServerStatusPlugin(Star):
         super().__init__(context)
         self.context = context
         self.config = config if config is not None else AstrBotConfig({})
-        
-        # 缓存系统启动时间
         try:
             self.boot_time = datetime.datetime.fromtimestamp(psutil.boot_time())
         except Exception as e:
-            logger.error(f"获取系统启动时间失败: {e}")
-            self.boot_time = datetime.datetime.now()
-        
-        # 在初始化时加载字体，避免每次渲染时重复加载
+            logger.error(f"获取系统启动时间失败: {e}"); self.boot_time = datetime.datetime.now()
         font_file = Path(__file__).parent / "font.ttf"
         if font_file.exists():
             try:
@@ -46,116 +46,71 @@ class ServerStatusPlugin(Star):
                 self.font_main = ImageFont.truetype(str(font_file), 24)
                 self.font_small = ImageFont.truetype(str(font_file), 18)
             except Exception as e:
-                logger.warning(f"加载字体文件失败，将使用默认字体: {e}")
-                self._load_default_fonts()
+                logger.warning(f"加载字体文件失败，将使用默认字体: {e}"); self._load_default_fonts()
         else:
-            logger.info("未找到 font.ttf，将使用默认字体。")
-            self._load_default_fonts()
-        
-        logger.info("服务器状态插件(v1.5)已成功加载，使用Pillow高速渲染。")
+            logger.info("未找到 font.ttf，将使用默认字体。"); self._load_default_fonts()
+        logger.info("服务器状态插件(v1.5.1)已成功加载，使用Pillow高速渲染。")
 
     def _load_default_fonts(self):
-        """加载Pillow的默认字体作为后备。"""
-        self.font_title = ImageFont.load_default()
-        self.font_main = ImageFont.load_default()
-        self.font_small = ImageFont.load_default()
+        self.font_title = ImageFont.load_default(); self.font_main = ImageFont.load_default(); self.font_small = ImageFont.load_default()
 
     def get_system_stats(self) -> Dict[str, Any]:
-        """获取原始系统状态数据，包含详细的错误处理。"""
         stats = {'disks': []}
-        try:
-            stats['cpu_percent'] = psutil.cpu_percent(interval=1)
-        except Exception as e:
-            logger.warning(f"获取 CPU 使用率失败: {e}"); stats['cpu_percent'] = 0
+        try: stats['cpu_percent'] = psutil.cpu_percent(interval=1)
+        except Exception as e: logger.warning(f"获取 CPU 使用率失败: {e}"); stats['cpu_percent'] = 0
         stats['cpu_temp'] = None
         if self.config.get("show_temp", True) and platform.system() == "Linux":
             try:
                 temps = psutil.sensors_temperatures()
                 for key in ['coretemp', 'k10temp', 'cpu_thermal']:
                     if key in temps and temps[key]: stats['cpu_temp'] = temps[key][0].current; break
-            except Exception as e:
-                logger.info(f"未能获取 CPU 温度: {e}")
-        try:
-            mem = psutil.virtual_memory()
-            stats.update({'mem_total': mem.total, 'mem_used': mem.used, 'mem_percent': mem.percent})
-        except Exception as e:
-            logger.warning(f"获取内存信息失败: {e}")
+            except Exception as e: logger.info(f"未能获取 CPU 温度: {e}")
+        try: mem = psutil.virtual_memory(); stats.update({'mem_total': mem.total, 'mem_used': mem.used, 'mem_percent': mem.percent})
+        except Exception as e: logger.warning(f"获取内存信息失败: {e}")
         paths_to_check = self.config.get('disk_paths', [])
         if not paths_to_check:
-            try:
-                paths_to_check = [p.mountpoint for p in psutil.disk_partitions(all=False)]
-            except Exception as e:
-                logger.warning(f"自动发现磁盘分区失败, 将仅检查根目录: {e}")
-                paths_to_check = ['C:\\' if platform.system() == "Windows" else '/']
+            try: paths_to_check = [p.mountpoint for p in psutil.disk_partitions(all=False)]
+            except Exception as e: logger.warning(f"自动发现磁盘分区失败: {e}"); paths_to_check = ['C:\\' if platform.system() == "Windows" else '/']
         for path in paths_to_check:
-            try:
-                usage = psutil.disk_usage(path)
-                stats['disks'].append({'path': path, 'total': usage.total, 'used': usage.used, 'percent': usage.percent})
-            except Exception as e:
-                logger.warning(f"获取磁盘路径 '{path}' 信息失败: {e}")
-        try:
-            net = psutil.net_io_counters()
-            stats.update({'net_sent': net.bytes_sent, 'net_recv': net.bytes_recv})
-        except Exception as e:
-            logger.warning(f"获取网络IO信息失败: {e}")
+            try: usage = psutil.disk_usage(path); stats['disks'].append({'path': path, 'total': usage.total, 'used': usage.used, 'percent': usage.percent})
+            except Exception as e: logger.warning(f"获取磁盘路径 '{path}' 信息失败: {e}")
+        try: net = psutil.net_io_counters(); stats.update({'net_sent': net.bytes_sent, 'net_recv': net.bytes_recv})
+        except Exception as e: logger.warning(f"获取网络IO信息失败: {e}")
         return stats
 
     def process_stats(self, raw_stats: Dict[str, Any]) -> Dict[str, Any]:
-        """将原始数据处理成易于展示的格式。"""
-        processed = raw_stats.copy()
-        uptime = datetime.datetime.now() - self.boot_time
-        days, rem = divmod(uptime.total_seconds(), 86400)
-        hours, rem = divmod(rem, 3600)
-        minutes, _ = divmod(rem, 60)
+        processed = raw_stats.copy(); uptime = datetime.datetime.now() - self.boot_time
+        days, rem = divmod(uptime.total_seconds(), 86400); hours, rem = divmod(rem, 3600); minutes, _ = divmod(rem, 60)
         processed['uptime_str'] = f"{int(days)}天 {int(hours)}小时 {int(minutes)}分钟"
-        processed['cpu_percent_str'] = f"{raw_stats.get('cpu_percent', 0):.1f}"
-        processed['mem_percent_str'] = f"{raw_stats.get('mem_percent', 0):.1f}"
-        processed['mem_total_str'] = self._format_bytes(raw_stats.get('mem_total', 0))
-        processed['mem_used_str'] = self._format_bytes(raw_stats.get('mem_used', 0))
-        processed['net_sent_str'] = self._format_bytes(raw_stats.get('net_sent', 0))
-        processed['net_recv_str'] = self._format_bytes(raw_stats.get('net_recv', 0))
+        processed['cpu_percent_str'] = f"{raw_stats.get('cpu_percent', 0):.1f}"; processed['mem_percent_str'] = f"{raw_stats.get('mem_percent', 0):.1f}"
+        processed['mem_total_str'] = self._format_bytes(raw_stats.get('mem_total', 0)); processed['mem_used_str'] = self._format_bytes(raw_stats.get('mem_used', 0))
+        processed['net_sent_str'] = self._format_bytes(raw_stats.get('net_sent', 0)); processed['net_recv_str'] = self._format_bytes(raw_stats.get('net_recv', 0))
         processed['disks_str'] = [{'path': d['path'], 'percent': f"{d.get('percent', 0):.1f}", 'used': self._format_bytes(d.get('used', 0)), 'total': self._format_bytes(d.get('total', 0))} for d in raw_stats.get('disks', [])]
         return processed
 
     async def render_status_with_pillow(self, data: Dict[str, Any]) -> io.BytesIO:
-        """使用 Pillow 高速绘制状态图片。"""
         W, H = 600, 280
-        H += len(data.get('disks_str', [])) * 70 # 动态调整画布高度
+        H += len(data.get('disks_str', [])) * 70
         BG_COLOR, TEXT_COLOR, BAR_BG, BAR_COLOR = "#ffffff", "#1f2937", "#e5e7eb", "#4f46e5"
-        
         img = Image.new("RGB", (W, H), BG_COLOR)
         draw = ImageDraw.Draw(img)
-        y = 30
-
-        draw.text((W/2, y), "服务器实时状态", font=self.font_title, fill=TEXT_COLOR, anchor="ms")
-        y += 50
-        
+        y = 30; draw.text((W/2, y), "服务器实时状态", font=self.font_title, fill=TEXT_COLOR, anchor="ms"); y += 50
         def draw_item(label, value, percent):
             nonlocal y
             draw.text((40, y), label, font=self.font_main, fill=TEXT_COLOR)
             draw.rectangle((40, y + 35, W - 40, y + 55), fill=BAR_BG, width=0)
             bar_width = (W - 80) * (float(percent) / 100)
             draw.rectangle((40, y + 35, 40 + bar_width, y + 55), fill=BAR_COLOR, width=0)
-            draw.text((W-40, y), f"{value}", font=self.font_main, fill=TEXT_COLOR, anchor="ra")
-            y += 70
-
+            draw.text((W-40, y), f"{value}", font=self.font_main, fill=TEXT_COLOR, anchor="ra"); y += 70
         cpu_temp_str = f"({data['cpu_temp']:.1f}°C)" if data.get('cpu_temp') else ""
         draw_item(f"🖥️ CPU {cpu_temp_str}", f"{data['cpu_percent_str']}%", data['cpu_percent_str'])
         draw_item(f"💾 内存 ({data['mem_used_str']} / {data['mem_total_str']})", f"{data['mem_percent_str']}%", data['mem_percent_str'])
-        
-        for disk in data.get('disks_str', []):
-            draw_item(f"💿 磁盘 [{disk['path']}] ({disk['used']} / {disk['total']})", f"{disk['percent']}%", disk['percent'])
-
-        draw.line([(40, y), (W - 40, y)], fill="#e5e7eb", width=2)
-        y += 20
-        draw.text((40, y), f"⏱️ 运行: {data['uptime_str']}", font=self.font_small, fill=TEXT_COLOR)
-        y += 25
+        for disk in data.get('disks_str', []): draw_item(f"💿 磁盘 [{disk['path']}] ({disk['used']} / {disk['total']})", f"{disk['percent']}%", disk['percent'])
+        draw.line([(40, y), (W - 40, y)], fill="#e5e7eb", width=2); y += 20
+        draw.text((40, y), f"⏱️ 运行: {data['uptime_str']}", font=self.font_small, fill=TEXT_COLOR); y += 25
         draw.text((40, y), f"⬆️ 上传: {data['net_sent_str']}", font=self.font_small, fill=TEXT_COLOR)
         draw.text((W - 40, y), f"⬇️ 下载: {data['net_recv_str']}", font=self.font_small, fill=TEXT_COLOR, anchor="ra")
-
-        img_buffer = io.BytesIO()
-        img.save(img_buffer, format='PNG', quality=90)
-        img_buffer.seek(0)
+        img_buffer = io.BytesIO(); img.save(img_buffer, format='PNG', quality=90); img_buffer.seek(0)
         return img_buffer
 
     @filter.command("status", alias={"服务器状态", "状态", "zt", "s"})
@@ -169,7 +124,19 @@ class ServerStatusPlugin(Star):
             processed_data = self.process_stats(raw_stats)
             image_buffer = await self.render_status_with_pillow(processed_data)
             
-            await event.send(event.image_result(image_buffer))
+            # ===================================================================
+            # 核心修正：使用标准的消息链方式发送内存中的图片数据
+            # ===================================================================
+            # 1. 用内存中的图片数据创建一个 Image 组件
+            image_component = Comp.Image(file=image_buffer)
+            # 2. 创建一个消息结果对象
+            message_to_send = event.make_result()
+            # 3. 将图片组件放入消息链中
+            message_to_send.chain = [image_component]
+            # 4. 发送最终构建好的消息
+            await event.send(message_to_send)
+            # ===================================================================
+
         except Exception as e:
             logger.error(f"处理 status 指令时发生未知错误: {e}", exc_info=True)
             await event.send(event.plain_result(f"抱歉，生成状态图时出现错误，请联系管理员。"))
