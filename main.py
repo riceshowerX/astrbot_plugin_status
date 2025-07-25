@@ -1,4 +1,4 @@
-# main.py
+# main.py 
 
 import psutil
 import datetime
@@ -94,6 +94,7 @@ class MetricsFormatter:
             self._format_memory(metrics), self._format_disks(metrics.disks),
             self._format_network(metrics),
         ]
+        # 这里的 filter() 现在是安全的，因为它明确指向 Python 的内置函数。
         return "\n".join(filter(None, parts))
 
     def _format_uptime(self, uptime: datetime.timedelta) -> str:
@@ -140,7 +141,7 @@ class MetricsFormatter:
     name="astrabot_plugin_status", 
     author="riceshowerx", 
     desc="以文本形式查询服务器的实时状态。", 
-    version="3.1.1", # 版本号提升
+    version="3.1.1",
     repo="https://github.com/riceshowerX/astrbot_plugin_status"
 )
 class ServerStatusPlugin(Star):
