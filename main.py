@@ -1,20 +1,21 @@
-# main.py 
+# main.py (修正 loop 错误)
 
 import psutil
 import datetime
 import platform
 from typing import Dict, Any
+import asyncio # <-- 新增导入 asyncio 模块
 
 # ===================================================================
-# 核心修改：遵循官方文档的导入规范
+# 核心修改：遵循官方文档的导入规范 (这部分已正确)
 # ===================================================================
 from astrbot.api.star import Star, register, Context
 from astrbot.api.event import filter, AstrMessageEvent
-from astrbot.api import logger # 使用官方推荐的 logger
+from astrbot.api import logger
 # ===================================================================
 
 
-# --- 辅助函数 (这部分是纯Python，无需改动) ---
+# --- 辅助函数 (无需改动) ---
 
 def format_bytes(byte_count: int) -> str:
     """将字节数格式化为最合适的单位 (GB, MB, KB)"""
@@ -55,7 +56,6 @@ def get_system_stats() -> Dict[str, Any]:
 
 # --- 插件主类 ---
 
-# 使用文档推荐的元数据格式，这些信息会被 metadata.yaml 覆盖
 @register(
     name="astrabot_plugin_status", 
     author="riceshowerx", 
@@ -64,10 +64,9 @@ def get_system_stats() -> Dict[str, Any]:
     repo="https://github.com/riceshowerX/astrbot_plugin_status"
 )
 class ServerStatusPlugin(Star):
-    # 遵循文档，__init__ 接收 Context 对象
     def __init__(self, context: Context):
         super().__init__(context)
-        self.context = context # 保存 context 以便后续使用
+        self.context = context
         logger.info("服务器状态插件已成功加载。")
 
     def format_status_message(self, stats: Dict[str, Any]) -> str:
@@ -101,16 +100,19 @@ class ServerStatusPlugin(Star):
         
         return "\n".join(lines)
 
-    # 核心修改：使用 @filter.command() 注册指令，并提供别名
     @filter.command("status", alias={"服务器状态", "状态", "zt", "s"})
     async def handle_server_status(self, event: AstrMessageEvent):
         '''查询并显示当前服务器的详细运行状态'''
         try:
-            # 在异步环境中执行阻塞操作是好习惯
-            system_stats = await self.context.loop.run_in_executor(None, get_system_stats)
+            # =========================================================
+            # 核心修正：使用 asyncio.to_thread 来运行阻塞函数 (Python 3.9+)
+            # 如果是 Python 3.8 或更低，使用下面的 get_running_loop 方式
+            # =========================================================
+            loop = asyncio.get_running_loop()
+            system_stats = await loop.run_in_executor(None, get_system_stats)
+
             status_message_str = self.format_status_message(system_stats)
             
-            # 核心修改：使用 yield 和 event.plain_result() 发送消息
             yield event.plain_result(status_message_str)
 
         except Exception as e:
