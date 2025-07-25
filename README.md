@@ -5,9 +5,9 @@
 ![Python](https://img.shields.io/badge/python-3.8+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
-一个为 [AstrBot](https://github.com/Soulter/AstrBot) 设计的实用插件，用于实时查询并显示机器人所在服务器的系统状态。
+一个为 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 设计的实用插件，用于实时查询并显示机器人所在服务器的系统状态，严格遵循 AstrBot 官方插件开发规范。
 
-**仓库地址:** [https://github.com/riceshowerX/astrabot_plugin_status](https://github.com/riceshowerX/astrbot_plugin_status)
+**仓库地址:** [https://github.com/riceshowerX/astrbot_plugin_status](https://github.com/riceshowerX/astrbot_plugin_status)
 
 ## 📖 简介
 
@@ -23,36 +23,40 @@
   - **运行时间**: 服务器自开机以来的稳定运行时间。
 - **跨平台支持**: 能够良好地运行在 Windows 和 Linux 系统上，并能自动处理平台差异。
 - **易于使用**: 支持多个别名指令，查询方便快捷。
-- **健壮稳定**: 包含完善的错误处理，即使部分信息获取失败（如温度），插件也不会崩溃。
-- **轻量高效**: 依赖 `psutil` 库，资源占用低，并通过异步执行避免阻塞 AstrBot 主程序。
+- **健壮稳定**: 包含完善的错误处理，即使部分信息获取失败（如温度），插件也不会崩溃，而是会向用户返回明确的错误提示。
+- **轻量高效**: 依赖 `psutil` 库，并通过异步执行避免阻塞 AstrBot 主程序。
 
 ## ⚙️ 安装指南
 
-请选择以下任一方式进行安装。
+请根据您的使用场景，在 AstrBot WebUI 中选择以下任一方式进行安装。
 
-### 方式一：使用 Git 克隆 (推荐)
+### 方式一：通过链接安装 (推荐)
 
-这是最推荐的安装方式，方便后续更新。
+这是最简单、最推荐的安装方式，可以确保您安装的是最新版本。
 
-1.  打开终端 (Terminal / CMD)。
-2.  使用 `cd` 命令进入 AstrBot 的 `plugins` 目录。
-3.  运行以下命令克隆仓库：
-    ```bash
-    git clone https://github.com/riceshowerX/astrabot_plugin_status.git
+1.  复制本插件的仓库链接：
     ```
-4.  重启 AstrBot。AstrBot 会自动检测 `requirements.txt` 并安装所需的 `psutil` 依赖。
+    https://github.com/riceshowerX/astrbot_plugin_status
+    ```
+2.  登录您的 AstrBot WebUI 管理界面。
+3.  导航至 **插件管理** 页面。
+4.  找到 **“从链接安装”** 功能入口。
+5.  将复制的链接粘贴到输入框中，点击“安装”。
+6.  AstrBot 将会自动完成下载、安装和依赖配置。安装完成后，启用插件即可使用。
 
-### 方式二：手动下载
+### 方式二：通过文件安装
+
+此方法适用于服务器无法直接访问 GitHub，或者需要安装特定版本插件的场景。
 
 1.  访问本插件的 GitHub 仓库页面。
-2.  点击右上角的 `Code` 按钮，然后选择 `Download ZIP`。
-3.  解压下载的 ZIP 文件，将其中的文件夹（应名为 `astrabot_plugin_status-main` 或类似）重命名为 `astrabot_plugin_status`。
-4.  将该文件夹完整地移动到 AstrBot 的 `plugins` 目录中。
-5.  **手动安装依赖**：打开终端，运行以下命令：
-    ```bash
-    pip install psutil
-    ```
-6.  重启 AstrBot 或在 WebUI 中重载插件。
+2.  点击右上角的 `Code` 按钮，然后选择 `Download ZIP`，将插件的压缩包下载到您的电脑上。
+3.  登录您的 AstrBot WebUI 管理界面。
+4.  导航至 **插件管理** 页面。
+5.  找到 **“从文件安装”** 功能入口。
+6.  选择您刚刚下载的 `.zip` 文件并上传。
+7.  AstrBot 将自动解压并安装插件。安装完成后，启用插件即可使用。
+
+---
 
 ## 🚀 使用方法
 
@@ -97,7 +101,7 @@
 
 - **psutil**: 一个跨平台的进程和系统利用率库。
 
-依赖已在 `requirements.txt` 中声明，AstrBot 会在加载插件时尝试自动安装。
+依赖已在 `requirements.txt` 中声明，无论使用何种方式安装，AstrBot 都会尝试自动处理。
 
 ## 📝 贡献
 
