@@ -1,26 +1,53 @@
-# main.py (V1.6.0 回归文本输出的终极简化版)
+# main.py (V2.0.0 现代化重构版)
 
 import psutil
 import datetime
 import platform
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
+from dataclasses import dataclass, field
 
 # 导入 AstrBot 官方 API
 from astrbot.api.star import Star, register, Context
 from astrbot.api.event import filter, AstrMessageEvent
 from astrbot.api import logger, AstrBotConfig
 
-# --- 插件主类 ---
+# ===================================================================
+# 1. 使用数据类 (Dataclasses) 定义清晰的数据结构
+# ===================================================================
+@dataclass(frozen=True)
+class DiskUsage:
+    """封装单个磁盘分区的使用情况"""
+    path: str
+    total: int
+    used: int
+    percent: float
 
+@dataclass(frozen=True)
+class SystemMetrics:
+    """定义一个清晰、类型安全的数据契约，替代字典"""
+    cpu_percent: float
+    cpu_temp: Optional[float]
+    mem_total: int
+    mem_used: int
+    mem_percent: float
+    net_sent: int
+    net_recv: int
+    uptime: datetime.timedelta
+    disks: List[DiskUsage] = field(default_factory=list)
+
+# --- 插件主类 ---
 @register(
     name="astrabot_plugin_status", 
     author="riceshowerx", 
-    desc="以文本形式查询服务器的实时状态 (快速稳定版)", 
-    version="1.6.0", # 版本号提升
+    desc="以文本形式查询服务器的实时状态 (重构版)", 
+    version="2.0.0", # 主版本号提升，代表重大重构
     repo="https://github.com/riceshowerX/astrbot_plugin_status"
 )
 class ServerStatusPlugin(Star):
+    # 类级别的常量
+    _BYTE_LABELS: Dict[int, str] = {0: ' B', 1: ' KB', 2: ' MB', 3: ' GB', 4: ' TB'}
+
     def __init__(self, context: Context, config: Optional[AstrBotConfig] = None):
         super().__init__(context)
         self.context = context
@@ -30,96 +57,97 @@ class ServerStatusPlugin(Star):
         except Exception as e:
             logger.error(f"获取系统启动时间失败: {e}"); self.boot_time = datetime.datetime.now()
         
-        logger.info("服务器状态插件(v1.6.0)已成功加载，使用纯文本输出。")
+        logger.info("服务器状态插件(v2.0.0)已成功加载，代码已现代化重构。")
 
-    def get_system_stats(self) -> Dict[str, Any]:
-        """获取原始系统状态数据，包含详细的错误处理。"""
-        stats = {'disks': []}
-        try:
-            stats['cpu_percent'] = psutil.cpu_percent(interval=1)
-        except Exception as e:
-            logger.warning(f"获取 CPU 使用率失败: {e}"); stats['cpu_percent'] = 0
-        stats['cpu_temp'] = None
-        if self.config.get("show_temp", True) and platform.system() == "Linux":
-            try:
-                temps = psutil.sensors_temperatures()
-                for key in ['coretemp', 'k10temp', 'cpu_thermal']:
-                    if key in temps and temps[key]: stats['cpu_temp'] = temps[key][0].current; break
-            except Exception as e:
-                logger.info(f"未能获取 CPU 温度: {e}")
-        try:
-            mem = psutil.virtual_memory()
-            stats.update({'mem_total': mem.total, 'mem_used': mem.used, 'mem_percent': mem.percent})
-        except Exception as e:
-            logger.warning(f"获取内存信息失败: {e}")
+    # ===================================================================
+    # 2. 将庞大的 get_system_stats 分解为多个职责单一的辅助方法
+    # ===================================================================
+    def _get_disk_usages(self) -> List[DiskUsage]:
+        """获取所有目标磁盘分区的使用情况。"""
+        disks = []
         paths_to_check = self.config.get('disk_paths', [])
         if not paths_to_check:
             try:
                 paths_to_check = [p.mountpoint for p in psutil.disk_partitions(all=False)]
             except Exception as e:
                 logger.warning(f"自动发现磁盘分区失败: {e}"); paths_to_check = ['C:\\' if platform.system() == "Windows" else '/']
+        
         for path in paths_to_check:
             try:
                 usage = psutil.disk_usage(path)
-                stats['disks'].append({'path': path, 'total': usage.total, 'used': usage.used, 'percent': usage.percent})
+                disks.append(DiskUsage(path=path, total=usage.total, used=usage.used, percent=usage.percent))
             except Exception as e:
                 logger.warning(f"获取磁盘路径 '{path}' 信息失败: {e}")
-        try:
-            net = psutil.net_io_counters()
-            stats.update({'net_sent': net.bytes_sent, 'net_recv': net.bytes_recv})
-        except Exception as e:
-            logger.warning(f"获取网络IO信息失败: {e}")
-        return stats
+        return disks
 
-    def format_text_message(self, raw_stats: Dict[str, Any]) -> str:
-        """将原始数据格式化为对用户友好的文本消息。"""
-        # --- 数据格式化 ---
-        uptime = datetime.datetime.now() - self.boot_time
-        days, rem = divmod(uptime.total_seconds(), 86400)
-        hours, rem = divmod(rem, 3600)
-        minutes, _ = divmod(rem, 60)
-        uptime_str = f"{int(days)}天 {int(hours)}小时 {int(minutes)}分钟"
+    def get_system_metrics(self) -> SystemMetrics:
+        """获取并组装所有系统指标，返回一个类型安全的数据对象。"""
+        # 每个指标的获取都封装在自己的 try-except 中，保证健壮性
+        try: cpu_p = psutil.cpu_percent(interval=1)
+        except Exception: cpu_p = 0.0
+        
+        cpu_t = None
+        if self.config.get("show_temp", True) and platform.system() == "Linux":
+            try:
+                temps = psutil.sensors_temperatures()
+                for key in ['coretemp', 'k10temp', 'cpu_thermal']:
+                    if key in temps and temps[key]: cpu_t = temps[key][0].current; break
+            except Exception: pass # 温度获取失败是正常情况，无需日志
 
-        cpu_percent_str = f"{raw_stats.get('cpu_percent', 0):.1f}%"
-        cpu_temp_str = f"({raw_stats['cpu_temp']:.1f}°C)" if raw_stats.get('cpu_temp') else ""
+        try: mem = psutil.virtual_memory(); mem_total, mem_used, mem_percent = mem.total, mem.used, mem.percent
+        except Exception: mem_total, mem_used, mem_percent = 0, 0, 0.0
 
-        mem_percent_str = f"{raw_stats.get('mem_percent', 0):.1f}%"
-        mem_used_str = self._format_bytes(raw_stats.get('mem_used', 0))
-        mem_total_str = self._format_bytes(raw_stats.get('mem_total', 0))
+        try: net = psutil.net_io_counters(); net_sent, net_recv = net.bytes_sent, net.bytes_recv
+        except Exception: net_sent, net_recv = 0, 0
+        
+        return SystemMetrics(
+            cpu_percent=cpu_p,
+            cpu_temp=cpu_t,
+            mem_total=mem_total,
+            mem_used=mem_used,
+            mem_percent=mem_percent,
+            net_sent=net_sent,
+            net_recv=net_recv,
+            uptime=datetime.datetime.now() - self.boot_time,
+            disks=self._get_disk_usages()
+        )
 
-        net_sent_str = self._format_bytes(raw_stats.get('net_sent', 0))
-        net_recv_str = self._format_bytes(raw_stats.get('net_recv', 0))
-
-        # --- 字符串拼接 ---
-        lines = [
-            "💻 **服务器实时状态**",
-            "--------------------",
-            f"⏱️ **已稳定运行**: {uptime_str}",
-            "--------------------",
-            f"🖥️ **CPU** {cpu_temp_str}",
-            f"   - **使用率**: {cpu_percent_str}",
-            "--------------------",
-            f"💾 **内存**",
-            f"   - **使用率**: {mem_percent_str}",
-            f"   - **已使用**: {mem_used_str} / {mem_total_str}",
+    # ===================================================================
+    # 3. 将庞大的 format_text_message 分解，并使用数据类
+    # ===================================================================
+    def format_text_message(self, metrics: SystemMetrics) -> str:
+        """将 SystemMetrics 对象格式化为对用户友好的文本消息。"""
+        parts = [
+            self._format_header(),
+            self._format_uptime(metrics.uptime),
+            self._format_cpu(metrics),
+            self._format_memory(metrics),
         ]
+        parts.extend(self._format_disks(metrics.disks))
+        parts.append(self._format_network(metrics))
         
-        for disk in raw_stats.get('disks', []):
-            lines.extend([
-                "--------------------",
-                f"💿 **磁盘 ({disk['path']})**",
-                f"   - **使用率**: {disk.get('percent', 0):.1f}%",
-                f"   - **已使用**: {self._format_bytes(disk.get('used', 0))} / {self._format_bytes(disk.get('total', 0))}"
-            ])
-        
-        lines.extend([
-            "--------------------",
-            "🌐 **网络I/O (自启动)**",
-            f"   - **总上传**: {net_sent_str}",
-            f"   - **总下载**: {net_recv_str}"
-        ])
-        
-        return "\n".join(lines)
+        return "\n".join(parts)
+
+    def _format_header(self) -> str: return "💻 **服务器实时状态**\n" + "--------------------"
+    def _format_uptime(self, uptime: datetime.timedelta) -> str:
+        days, rem = divmod(uptime.total_seconds(), 86400); hours, rem = divmod(rem, 3600); minutes, _ = divmod(rem, 60)
+        return f"⏱️ **已稳定运行**: {int(days)}天 {int(hours)}小时 {int(minutes)}分钟"
+    def _format_cpu(self, m: SystemMetrics) -> str:
+        temp = f"({m.cpu_temp:.1f}°C)" if m.cpu_temp else ""
+        return f"--------------------\n🖥️ **CPU** {temp}\n   - **使用率**: {m.cpu_percent:.1f}%"
+    def _format_memory(self, m: SystemMetrics) -> str:
+        return (f"--------------------\n💾 **内存**\n   - **使用率**: {m.mem_percent:.1f}%\n"
+                f"   - **已使用**: {self._format_bytes(m.mem_used)} / {self._format_bytes(m.mem_total)}")
+    def _format_disks(self, disks: List[DiskUsage]) -> List[str]:
+        disk_parts = []
+        for disk in disks:
+            disk_parts.append(f"--------------------\n💿 **磁盘 ({disk.path})**\n   - **使用率**: {disk.percent:.1f}%\n"
+                              f"   - **已使用**: {self._format_bytes(disk.used)} / {self._format_bytes(disk.total)}")
+        return disk_parts
+    def _format_network(self, m: SystemMetrics) -> str:
+        return (f"--------------------\n🌐 **网络I/O (自启动)**\n"
+                f"   - **总上传**: {self._format_bytes(m.net_sent)}\n"
+                f"   - **总下载**: {self._format_bytes(m.net_recv)}")
 
     @filter.command("status", alias={"服务器状态", "状态", "zt", "s"})
     async def handle_server_status(self, event: AstrMessageEvent):
@@ -127,23 +155,22 @@ class ServerStatusPlugin(Star):
         try:
             await event.send(event.plain_result("正在获取服务器状态，请稍候..."))
             
-            loop = asyncio.get_running_loop()
-            raw_stats = await loop.run_in_executor(None, self.get_system_stats)
+            # ===================================================================
+            # 4. 使用 Python 3.9+ 的 asyncio.to_thread 简化异步调用
+            # ===================================================================
+            metrics = await asyncio.to_thread(self.get_system_metrics)
             
-            # 直接获取数据并格式化为文本
-            text_message = self.format_text_message(raw_stats)
-            
-            # 发送最终的纯文本消息
+            text_message = self.format_text_message(metrics)
             await event.send(event.plain_result(text_message))
 
         except Exception as e:
             logger.error(f"处理 status 指令时发生未知错误: {e}", exc_info=True)
             await event.send(event.plain_result(f"抱歉，获取状态时出现错误，请联系管理员。"))
     
-    @staticmethod
-    def _format_bytes(byte_count: int) -> str:
+    @classmethod
+    def _format_bytes(cls, byte_count: int) -> str:
         if byte_count is None: return "N/A"
-        power = 1024; n = 0
-        power_labels = {0: ' B', 1: ' KB', 2: ' MB', 3: ' GB', 4: ' TB'}
-        while byte_count >= power and n < len(power_labels) - 1: byte_count /= power; n += 1
-        return f"{byte_count:.2f}{power_labels[n]}"
+        power, n = 1024, 0
+        while byte_count >= power and n < len(cls._BYTE_LABELS) - 1:
+            byte_count /= power; n += 1
+        return f"{byte_count:.2f}{cls._BYTE_LABELS[n]}"
