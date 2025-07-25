@@ -4,8 +4,9 @@ import psutil
 import datetime
 import platform
 from typing import Dict, Any
-
-from astrabot.api import Star, register, on_command, Message, Event
+from astrbot.api.star import Star, register, on_command
+from astrbot.api.message import Message
+from astrbot.core.platform.astr_message_event import AstrMessageEvent
 
 # --- 辅助函数 ---
 
