@@ -1,4 +1,4 @@
-# main.py (最终修正版)
+# main.py 
 
 import psutil
 import datetime
@@ -6,17 +6,18 @@ import platform
 from typing import Dict, Any
 
 # ===================================================================
-# 核心修正：将 on_command 从 astrbot.api.event 中导入
+# 核心修改：遵循官方文档的导入规范
 # ===================================================================
-from astrbot.api.star import Star, register
-from astrbot.api.event import on_command  # <--- 主要修改点
-from astrbot.api.message import Message
-from astrbot.core.platform.astr_message_event import AstrMessageEvent
+from astrbot.api.star import Star, register, Context
+from astrbot.api.event import filter, AstrMessageEvent
+from astrbot.api import logger # 使用官方推荐的 logger
 # ===================================================================
 
-# --- 辅助函数 (无需改动) ---
+
+# --- 辅助函数 (这部分是纯Python，无需改动) ---
 
 def format_bytes(byte_count: int) -> str:
+    """将字节数格式化为最合适的单位 (GB, MB, KB)"""
     if byte_count is None: return "N/A"
     power = 1024; n = 0
     power_labels = {0: ' B', 1: ' KB', 2: ' MB', 3: ' GB', 4: ' TB'}
@@ -25,9 +26,8 @@ def format_bytes(byte_count: int) -> str:
         n += 1
     return f"{byte_count:.2f}{power_labels[n]}"
 
-# --- 数据获取模块 (无需改动) ---
-
 def get_system_stats() -> Dict[str, Any]:
+    """获取所有系统状态信息，并将其打包成一个字典。"""
     stats = {}
     stats['cpu_percent'] = psutil.cpu_percent(interval=1)
     stats['cpu_temp'] = None
@@ -53,21 +53,25 @@ def get_system_stats() -> Dict[str, Any]:
     stats.update({'net_sent': net_io.bytes_sent, 'net_recv': net_io.bytes_recv})
     return stats
 
-# --- 插件主类 (无需改动) ---
+# --- 插件主类 ---
 
+# 使用文档推荐的元数据格式，这些信息会被 metadata.yaml 覆盖
 @register(
     name="astrabot_plugin_status", 
-    display_name="服务器状态", 
     author="riceshowerx", 
-    version="v1.3", 
-    brief="查询服务器的实时状态"
+    desc="查询服务器的实时状态", 
+    version="1.3.0",
+    repo="https://github.com/riceshowerX/astrbot_plugin_status"
 )
 class ServerStatusPlugin(Star):
-    def __init__(self, bot, **kwargs):
-        super().__init__(bot, **kwargs)
-        self.log("服务器状态插件已加载。")
+    # 遵循文档，__init__ 接收 Context 对象
+    def __init__(self, context: Context):
+        super().__init__(context)
+        self.context = context # 保存 context 以便后续使用
+        logger.info("服务器状态插件已成功加载。")
 
     def format_status_message(self, stats: Dict[str, Any]) -> str:
+        """将收集到的状态字典格式化为对用户友好的消息字符串。"""
         uptime = stats.get('uptime', datetime.timedelta(0))
         days, remainder = divmod(uptime.total_seconds(), 86400)
         hours, remainder = divmod(remainder, 3600)
@@ -97,12 +101,18 @@ class ServerStatusPlugin(Star):
         
         return "\n".join(lines)
 
-    @on_command("status", "服务器状态", "state", aliases={"状态", "zt", "s"}, help="显示当前服务器的详细运行状态")
+    # 核心修改：使用 @filter.command() 注册指令，并提供别名
+    @filter.command("status", alias={"服务器状态", "状态", "zt", "s"})
     async def handle_server_status(self, event: AstrMessageEvent):
+        '''查询并显示当前服务器的详细运行状态'''
         try:
-            system_stats = await self.bot.loop.run_in_executor(None, get_system_stats)
+            # 在异步环境中执行阻塞操作是好习惯
+            system_stats = await self.context.loop.run_in_executor(None, get_system_stats)
             status_message_str = self.format_status_message(system_stats)
-            await self.bot.send(event, Message(content=status_message_str))
+            
+            # 核心修改：使用 yield 和 event.plain_result() 发送消息
+            yield event.plain_result(status_message_str)
+
         except Exception as e:
-            self.log_error(f"获取服务器状态时发生未知错误: {e}")
-            await self.bot.send(event, Message(content=f"抱歉，获取服务器状态时出现错误。详情请查看日志。"))
+            logger.error(f"获取服务器状态时发生未知错误: {e}")
+            yield event.plain_result(f"抱歉，获取服务器状态时出现错误。详情请查看日志。")
