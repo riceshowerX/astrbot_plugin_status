@@ -124,7 +124,6 @@ class ServerStatusPlugin(Star):
         self._cache_timestamp: float = 0.0
         self.cache_duration: int = self.plugin_config.get('cache_duration', 5)
         self._lock = asyncio.Lock()
-        # 默认字体路径，可自定义
         self._font_path = self.plugin_config.get('font_path', '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf')
 
     def _validate_config(self, config: AstrBotConfig) -> Dict[str, Any]:
@@ -149,7 +148,7 @@ class ServerStatusPlugin(Star):
         return checked
 
     @event_filter.command("status", alias={"服务器状态", "状态", "zt", "s"})
-    async def handle_server_status(self, event: AstrMessageEvent):
+    async def handle_server_status(self, event, *args, **kwargs):
         now = time.time()
         async with self._lock:
             if self.cache_duration > 0 and self._cache and (now - self._cache_timestamp < self.cache_duration):
