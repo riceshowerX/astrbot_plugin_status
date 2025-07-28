@@ -10,7 +10,7 @@
     "type": "list",
     "editor_mode": true,
     "editor_language": "json",
-    "description": "要监控的磁盘路径列表。留空则自动检测所有主要分区。支持 Linux 和 Windows 路径，请使用 JSON 数组格式。",
+    "description": "要监控的磁盘路径列表。强烈建议在生产环境中显式配置以避免潜在的IO阻塞。若留空，则会自动检测并过滤掉网络磁盘后的本地分区。",
     "hint": "示例：[\"/\", \"/home\", \"D:\\\\\"]",
     "default": []
   },
