@@ -6,7 +6,7 @@ name: astrbot_plugin_status
 desc: 查询运行Bot的服务器的CPU、内存、磁盘和网络状态。
 
 # 插件版本号，建议遵循语义化版本规范
-version: v1.3
+version: v1.0
 
 # 作者名
 author: riceshowerx
