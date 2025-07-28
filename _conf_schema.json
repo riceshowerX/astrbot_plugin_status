@@ -1,18 +1,8 @@
 {
   "privacy_level": {
-    "type": "select",
+    "type": "string",
     "description": "【重要】信息披露的隐私级别。用于控制在公共场合下信息泄露的风险。",
-    "hint": "在公共群组中，强烈建议选择 'minimal' 以隐藏敏感路径和资源总量。",
-    "options": [
-      {
-        "label": "完整模式 (Full)",
-        "value": "full"
-      },
-      {
-        "label": "最小模式 (Minimal)",
-        "value": "minimal"
-      }
-    ],
+    "hint": "请输入 'full' 或 'minimal'。在公共群组中，强烈建议填写 'minimal'。",
     "default": "full"
   },
   "disk_paths": {
