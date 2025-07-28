@@ -1,5 +1,4 @@
-# -*- coding: utf-8 -*-
-# 版本: 2.1 - 工业级容错与优化版
+
 import psutil
 import datetime
 import platform
