@@ -18,5 +18,15 @@
     "type": "bool",
     "description": "是否尝试显示CPU温度（仅在部分 Linux 系统和硬件上有效，无效时自动隐藏）。",
     "default": true
+  },
+  "kanban_name": {
+    "type": "string",
+    "description": "看板娘角色名称（如“小星”、“初音”、“爱酱”），留空则随机选择。",
+    "default": ""
+  },
+  "language": {
+    "type": "string",
+    "description": "插件消息语言（目前仅支持 zh，预留en/jp等）。",
+    "default": "zh"
   }
 }
