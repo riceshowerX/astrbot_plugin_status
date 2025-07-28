@@ -1,5 +1,3 @@
-# main.py (V3.1.3 - 修正加载时序问题)
-
 import psutil
 import datetime
 import platform
@@ -8,7 +6,7 @@ import time
 from typing import Dict, Any, Optional, List
 from dataclasses import dataclass, field
 
-# 导入 AstrBot 官方 API
+# AstrBot 官方 API
 from astrbot.api.star import Star, register, Context
 from astrbot.api.event import filter as event_filter, AstrMessageEvent
 from astrbot.api import logger, AstrBotConfig
@@ -34,56 +32,54 @@ class SystemMetrics:
     disks: List[DiskUsage] = field(default_factory=list)
 
 # --- 数据采集器 ---
+import logging
+py_logger = logging.getLogger("StatusPlugin")  # 用标准库 logging 避免 self.name 问题
+
 class MetricsCollector:
     def __init__(self, config: AstrBotConfig):
         self.config = config
         try:
             self.boot_time = datetime.datetime.fromtimestamp(psutil.boot_time())
         except Exception as e:
-            logger.error(f"[StatusPlugin] 获取系统启动时间失败: {e}")
+            py_logger.error(f"[StatusPlugin] 获取系统启动时间失败: {e}")
             self.boot_time = datetime.datetime.now()
 
     def _get_disk_usages(self) -> List[DiskUsage]:
         disks = []
         paths_to_check = self.config.get('disk_paths', [])
-        
-        # 如果配置为空，则自动发现分区
         if not paths_to_check:
             try:
                 paths_to_check = [p.mountpoint for p in psutil.disk_partitions(all=False)]
             except Exception as e:
-                logger.warning(f"[StatusPlugin] 自动发现磁盘分区失败，将使用默认路径: {e}")
+                py_logger.warning(f"[StatusPlugin] 自动发现磁盘分区失败，将使用默认路径: {e}")
                 paths_to_check = ['C:\\' if platform.system() == "Windows" else '/']
-        
         for path in paths_to_check:
             try:
                 usage = psutil.disk_usage(path)
                 disks.append(DiskUsage(path=path, total=usage.total, used=usage.used, percent=usage.percent))
             except Exception as e:
-                logger.warning(f"[StatusPlugin] 获取磁盘路径 '{path}' 信息失败: {e}")
+                py_logger.warning(f"[StatusPlugin] 获取磁盘路径 '{path}' 信息失败: {e}")
         return disks
 
     def collect(self) -> Optional[SystemMetrics]:
         try:
-            # psutil 的一些调用是阻塞的，将在异步任务中运行
             cpu_p = psutil.cpu_percent(interval=1)
             mem = psutil.virtual_memory()
             net = psutil.net_io_counters()
         except Exception as e:
-            logger.error(f"[StatusPlugin] 获取核心系统指标失败: {e}", exc_info=True)
+            py_logger.error(f"[StatusPlugin] 获取核心系统指标失败: {e}", exc_info=True)
             return None
 
         cpu_t = None
         if self.config.get("show_temp", True) and hasattr(psutil, "sensors_temperatures"):
             try:
                 temps = psutil.sensors_temperatures()
-                # 遍历常见的CPU温度键
                 for key in ['coretemp', 'k10temp', 'cpu_thermal', 'acpitz']:
                     if key in temps and temps[key]:
                         cpu_t = temps[key][0].current
                         break
             except Exception:
-                pass  # 获取温度失败是常见情况，静默处理
+                pass
 
         return SystemMetrics(
             cpu_percent=cpu_p, cpu_temp=cpu_t,
@@ -145,12 +141,12 @@ class MetricsFormatter:
             n += 1
         return f"{byte_count:.2f}{cls._BYTE_LABELS[n]}"
 
-# --- AstrBot 插件主类 (协调器) ---
+# --- AstrBot 插件主类 ---
 @register(
     name="astrabot_plugin_status",
     author="riceshowerx & AstrBot Assistant",
     desc="以文本形式查询服务器的实时状态 (已按规范修复)",
-    version="3.1.3",  # 版本号提升
+    version="3.1.3",
     repo="https://github.com/riceshowerX/astrbot_plugin_status"
 )
 class ServerStatusPlugin(Star):
@@ -158,45 +154,36 @@ class ServerStatusPlugin(Star):
         super().__init__(context)
         self.context = context
         self.config = config
-        self.collector = MetricsCollector(self.config)
+        self.collector = None  # 延迟初始化
         self.formatter = MetricsFormatter()
-
         self._cache: Optional[str] = None
         self._cache_timestamp: float = 0.0
-        # 从配置中读取缓存时间，如果未配置，则默认为 5 秒
         self.cache_duration = self.config.get('cache_duration', 5)
 
     @event_filter.command("status", alias={"服务器状态", "状态", "zt", "s"})
     async def handle_server_status(self, event: AstrMessageEvent):
-        """
-        消息处理函数。
-        遵循 AstrBot 框架规范，使用 'yield' 范式返回结果。
-        """
         now = time.time()
-        
-        # 检查缓存
+
         if self.cache_duration > 0 and self._cache and (now - self._cache_timestamp < self.cache_duration):
-            # logger.info("从缓存中提供服务器状态。")  # 可选：如果需要，可以在handler中记录日志
             yield event.plain_result(self._cache)
             return
 
         yield event.plain_result("正在重新获取服务器状态，请稍候...")
-        
+
         try:
-            # 将阻塞的I/O操作移至线程中执行，避免阻塞主事件循环
+            # 延迟初始化 collector，避免 __init__ 时访问 logger
+            if self.collector is None:
+                self.collector = MetricsCollector(self.config)
             metrics = await asyncio.to_thread(self.collector.collect)
-            
+
             if metrics is None:
                 yield event.plain_result("抱歉，获取核心服务器指标时发生错误，请检查日志。")
                 return
 
             text_message = self.formatter.format(metrics)
-            
-            # 更新缓存
             self._cache, self._cache_timestamp = text_message, now
-            
             yield event.plain_result(text_message)
-            
+
         except Exception as e:
             logger.error(f"[StatusPlugin] 处理 status 指令时发生未知错误: {e}", exc_info=True)
             yield event.plain_result(f"抱歉，获取状态时出现未知错误，请联系管理员。")
