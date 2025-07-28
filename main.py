@@ -1,4 +1,4 @@
-# main.py (V3.1.2 - 全面遵循 AstrBot 框架规范)
+# main.py (V3.1.3 - 修正加载时序问题)
 
 import psutil
 import datetime
@@ -40,7 +40,7 @@ class MetricsCollector:
         try:
             self.boot_time = datetime.datetime.fromtimestamp(psutil.boot_time())
         except Exception as e:
-            logger.error(f"获取系统启动时间失败: {e}")
+            logger.error(f"[StatusPlugin] 获取系统启动时间失败: {e}")
             self.boot_time = datetime.datetime.now()
 
     def _get_disk_usages(self) -> List[DiskUsage]:
@@ -52,7 +52,7 @@ class MetricsCollector:
             try:
                 paths_to_check = [p.mountpoint for p in psutil.disk_partitions(all=False)]
             except Exception as e:
-                logger.warning(f"自动发现磁盘分区失败，将使用默认路径: {e}")
+                logger.warning(f"[StatusPlugin] 自动发现磁盘分区失败，将使用默认路径: {e}")
                 paths_to_check = ['C:\\' if platform.system() == "Windows" else '/']
         
         for path in paths_to_check:
@@ -60,7 +60,7 @@ class MetricsCollector:
                 usage = psutil.disk_usage(path)
                 disks.append(DiskUsage(path=path, total=usage.total, used=usage.used, percent=usage.percent))
             except Exception as e:
-                logger.warning(f"获取磁盘路径 '{path}' 信息失败: {e}")
+                logger.warning(f"[StatusPlugin] 获取磁盘路径 '{path}' 信息失败: {e}")
         return disks
 
     def collect(self) -> Optional[SystemMetrics]:
@@ -70,7 +70,7 @@ class MetricsCollector:
             mem = psutil.virtual_memory()
             net = psutil.net_io_counters()
         except Exception as e:
-            logger.error(f"获取核心系统指标失败: {e}", exc_info=True)
+            logger.error(f"[StatusPlugin] 获取核心系统指标失败: {e}", exc_info=True)
             return None
 
         cpu_t = None
@@ -148,18 +148,18 @@ class MetricsFormatter:
 # --- AstrBot 插件主类 (协调器) ---
 @register(
     name="astrabot_plugin_status",
-    author="riceshowerx",
+    author="riceshowerx & AstrBot Assistant",
     desc="以文本形式查询服务器的实时状态 (已按规范修复)",
-    version="3.1.2",  # 版本号提升
+    version="3.1.3",  # 版本号提升
     repo="https://github.com/riceshowerX/astrbot_plugin_status"
 )
 class ServerStatusPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
         """
-        构造函数修正:
-        1. 签名遵循官方文档 (self, context, config)，config 由框架保证提供。
-        2. 直接使用 config 对象，不再需要防御性编程。
-        3. 从配置中读取缓存时间。
+        构造函数。
+        插件的核心逻辑在此初始化。
+        【关键修复】：移除了此处的 logger 调用，因为它会在框架赋予 self.name 属性前执行，导致 AttributeError。
+        框架本身会在插件成功加载后打印标准日志，因此无需在此处手动记录。
         """
         super().__init__(context)
         self.context = context
@@ -172,27 +172,24 @@ class ServerStatusPlugin(Star):
         # 从配置中读取缓存时间，如果未配置，则默认为 5 秒
         self.cache_duration = self.config.get('cache_duration', 5)
 
-        logger.info(f"服务器状态插件(v3.1.2)已加载。缓存时间: {self.cache_duration}s")
-
     @event_filter.command("status", alias={"服务器状态", "状态", "zt", "s"})
     async def handle_server_status(self, event: AstrMessageEvent):
         """
-        消息发送方式修正:
-        全面改用 'yield event.plain_result()' 的标准范式。
-        这符合 AstrBot 的“洋葱模型”，并将消息发送交由框架处理。
+        消息处理函数。
+        遵循 AstrBot 框架规范，使用 'yield' 范式返回结果。
         """
         now = time.time()
         
         # 检查缓存
         if self.cache_duration > 0 and self._cache and (now - self._cache_timestamp < self.cache_duration):
-            logger.info("从缓存中提供服务器状态。")
+            # logger.info("从缓存中提供服务器状态。")  # 可选：如果需要，可以在handler中记录日志
             yield event.plain_result(self._cache)
             return
 
         yield event.plain_result("正在重新获取服务器状态，请稍候...")
         
         try:
-            # 将阻塞的I/O操作移至线程中执行，避免阻塞事件循环
+            # 将阻塞的I/O操作移至线程中执行，避免阻塞主事件循环
             metrics = await asyncio.to_thread(self.collector.collect)
             
             if metrics is None:
@@ -207,5 +204,5 @@ class ServerStatusPlugin(Star):
             yield event.plain_result(text_message)
             
         except Exception as e:
-            logger.error(f"处理 status 指令时发生未知错误: {e}", exc_info=True)
+            logger.error(f"[StatusPlugin] 处理 status 指令时发生未知错误: {e}", exc_info=True)
             yield event.plain_result(f"抱歉，获取状态时出现未知错误，请联系管理员。")
