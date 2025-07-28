@@ -10,32 +10,9 @@ import json
 import os
 import logging
 
-# --- Mocking for standalone testing ---
-# This block allows the script to be run directly for testing without the full bot framework.
-class MockLogger:
-    def info(self, msg, *args): print(f"INFO: {msg}" % args)
-    def warning(self, msg, *args): print(f"WARNING: {msg}" % args)
-    def error(self, msg, *args, **kwargs): print(f"ERROR: {msg}" % args)
-    def debug(self, msg, *args): print(f"DEBUG: {msg}" % args)
-
-class MockContext: pass
-class MockAstrBotConfig(dict): pass
-class MockAstrMessageEvent:
-    def plain_result(self, text): return f"--- BOT OUTPUT ---\n{text}\n------------------"
-
-# Faking decorators and base class for standalone execution
-def register(**kwargs): return lambda cls: cls
-class Star:
-    def __init__(self, context): pass
-class event_filter:
-    @staticmethod
-    def command(*args, **kwargs): return lambda func: func
-
-logger = MockLogger()
-Context = MockContext
-AstrBotConfig = MockAstrBotConfig
-AstrMessageEvent = MockAstrMessageEvent
-# --- End Mocking ---
+from astrbot.api.star import Star, register, Context
+from astrbot.api.event import filter as event_filter, AstrMessageEvent
+from astrbot.api import logger, AstrBotConfig
 
 
 # --- 工具函数 (Utility Functions) ---
@@ -320,7 +297,7 @@ class MetricsFormatter:
 # --- AstrBot Plugin Main Class (Final Version) ---
 @register(name="astrabot_plugin_status", author="riceshowerx & AstrBot Assistant",
           desc="[v2.1] 工业级状态插件. 警告: 请务必配置命令权限, 并锁定psutil版本!", version="2.1",
-          repo="...") # Add your repo link here
+          repo="https://github.com/your-username/your-repo")
 class ServerStatusPlugin(Star):
     
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -387,7 +364,7 @@ class ServerStatusPlugin(Star):
         cache_duration = self.plugin_config['cache_duration']
         
         async with self._lock:
-            # Double-check cache inside the lock
+            # Double-check cache inside the lock to prevent dog-piling
             if cache_duration > 0 and self._cache and (now - self._cache_timestamp < cache_duration):
                 yield event.plain_result(self._cache)
                 return
@@ -398,15 +375,13 @@ class ServerStatusPlugin(Star):
                 timeout = self.plugin_config['collect_timeout']
                 metrics = await asyncio.wait_for(asyncio.to_thread(self.collector.collect), timeout=timeout)
                 
-                # [v2.1] Logic is simpler now, as collect() never returns None.
-                # It always returns a metrics object, possibly with partial data and an error list.
                 text_message = self.formatter.format(
                     metrics, 
                     self.is_containerized, 
                     self.plugin_config['privacy_level']
                 )
                 
-                # Only cache if there are no collection errors to avoid caching failure states.
+                # Only cache successful results to avoid caching failure states.
                 if not metrics.errors:
                     self._cache, self._cache_timestamp = text_message, now
                 
