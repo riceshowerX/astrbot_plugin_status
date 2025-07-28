@@ -1,6 +1,6 @@
 # AstrBot 服务器状态插件 (astrabot_plugin_status)
 
-![Version](https://img.shields.io/badge/version-v3.1.3-blueviolet)
+![Version](https://img.shields.io/badge/version-v1.0-blueviolet)
 ![Author](https://img.shields.io/badge/author-riceshowerx-green)
 ![Python](https://img.shields.io/badge/python-3.9+-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
