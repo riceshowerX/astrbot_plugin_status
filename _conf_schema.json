@@ -1,14 +1,20 @@
 {
+  "cache_duration": {
+    "type": "int",
+    "description": "服务器状态查询的缓存时间（秒）。设为0则禁用缓存。",
+    "default": 5
+  },
   "disk_paths": {
-    "description": "要监控的磁盘路径列表 (留空则自动发现)",
     "type": "list",
-    "hint": "例如: [\"/\", \"/home\"] (Linux) 或 [\"C:\", \"D:\"] (Windows)。如果列表为空，插件将尝试自动发现所有物理分区。",
+    "editor_mode": true,
+    "editor_language": "json",
+    "description": "要监控的磁盘路径列表。留空则自动检测所有主要分区。",
+    "hint": "示例：[\"/\", \"/home\", \"D:\\\\\"]，请使用JSON数组格式。",
     "default": []
   },
   "show_temp": {
-    "description": "是否显示CPU温度",
     "type": "bool",
-    "hint": "仅在部分受支持的Linux系统上有效，如果无法获取，将自动隐藏。",
+    "description": "是否尝试显示CPU温度（仅在部分Linux系统上有效）。",
     "default": true
   }
 }
