@@ -36,19 +36,26 @@ class SystemMetrics:
 # --- 数据采集器 ---
 py_logger = logging.getLogger("StatusPlugin")
 
-# 路径校验函数（防止输入奇怪路径，防止目录穿越等）
-def safe_disk_path(path):
+def safe_disk_path(path: str) -> bool:
+    # 更严格的路径安全检查
     if not isinstance(path, str):
         return False
     if len(path) > 256:
         return False
     # 禁止特殊字符等
-    for c in ['..', '~', '\0']:
+    for c in ['..', '~', '\0', '*', '?', '|', '<', '>', '"', ':']:
         if c in path:
             return False
+    if path.startswith(' '):
+        return False
+    # 路径必须为绝对路径
+    if not (path.startswith('/') or (':' in path and '\\' in path)):
+        return False
     return True
 
 class MetricsCollector:
+    MAX_DISK_COUNT = 10
+
     def __init__(self, config: AstrBotConfig):
         self.config = config
         try:
@@ -59,11 +66,9 @@ class MetricsCollector:
 
     def _get_disk_usages(self) -> List[DiskUsage]:
         disks = []
-        # 配置安全校验
         try:
             paths_to_check = self.config.get('disk_paths', [])
             if isinstance(paths_to_check, str):
-                # 防止被错误传入字符串
                 try:
                     paths_to_check = json.loads(paths_to_check)
                 except Exception:
@@ -73,78 +78,72 @@ class MetricsCollector:
         except Exception:
             paths_to_check = []
 
-        # 限制磁盘数，防止意外遍历过多分区
-        MAX_DISK_COUNT = 10
-
         if not paths_to_check:
             try:
                 all_parts = [p.mountpoint for p in psutil.disk_partitions(all=False)]
-                paths_to_check = all_parts[:MAX_DISK_COUNT]
+                paths_to_check = all_parts[:self.MAX_DISK_COUNT]
             except Exception as e:
                 py_logger.warning("[StatusPlugin] 自动发现磁盘分区失败，将使用默认路径: %s", e)
                 paths_to_check = ['C:\\' if platform.system() == "Windows" else '/']
 
-        # 路径白名单防御（可选，默认允许所有）
         checked = []
         for path in paths_to_check:
             if safe_disk_path(path):
                 checked.append(path)
             else:
                 py_logger.warning("[StatusPlugin] 非法磁盘路径被忽略: %r", path)
-        paths_to_check = checked[:MAX_DISK_COUNT]
+        paths_to_check = checked[:self.MAX_DISK_COUNT]
 
         for path in paths_to_check:
             try:
                 usage = psutil.disk_usage(path)
-                disks.append(DiskUsage(path=path, total=usage.total, used=usage.used, percent=usage.percent))
+                disks.append(DiskUsage(
+                    path=path,
+                    total=usage.total,
+                    used=usage.used,
+                    percent=usage.percent
+                ))
+            except PermissionError:
+                py_logger.warning("[StatusPlugin] 无权限访问磁盘路径 '%s'，已忽略。", path)
+            except FileNotFoundError:
+                py_logger.warning("[StatusPlugin] 磁盘路径不存在 '%s'，已忽略。", path)
             except Exception as e:
                 py_logger.warning("[StatusPlugin] 获取磁盘路径 '%s' 信息失败: %s", path, e)
         return disks
 
     def collect(self) -> Optional[SystemMetrics]:
-        # 收集超时防护
         try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-
-        async def limited():
-            try:
-                cpu_p = psutil.cpu_percent(interval=1)
-                mem = psutil.virtual_memory()
-                net = psutil.net_io_counters()
-            except Exception as e:
-                py_logger.error("[StatusPlugin] 获取核心系统指标失败: %s", e, exc_info=True)
-                return None
-
-            cpu_t = None
-            try:
-                if self.config.get("show_temp", True) and hasattr(psutil, "sensors_temperatures"):
-                    temps = psutil.sensors_temperatures()
-                    for key in ['coretemp', 'k10temp', 'cpu_thermal', 'acpitz']:
-                        if key in temps and temps[key]:
-                            cpu_t = temps[key][0].current
-                            break
-            except Exception:
-                pass
-
-            return SystemMetrics(
-                cpu_percent=cpu_p, cpu_temp=cpu_t,
-                mem_total=mem.total, mem_used=mem.used, mem_percent=mem.percent,
-                net_sent=net.bytes_sent, net_recv=net.bytes_recv,
-                uptime=datetime.datetime.now() - self.boot_time,
-                disks=self._get_disk_usages()
-            )
-
-        # 防止阻塞（最大耗时10秒）
-        try:
-            if loop and loop.is_running():
-                return asyncio.run_coroutine_threadsafe(asyncio.wait_for(limited(), timeout=10), loop).result()
-            else:
-                return asyncio.run(asyncio.wait_for(limited(), timeout=10))
+            cpu_p = psutil.cpu_percent(interval=1)
+            mem = psutil.virtual_memory()
+            net = psutil.net_io_counters()
         except Exception as e:
-            py_logger.error("[StatusPlugin] 指标采集过程超时或异常: %s", e)
+            py_logger.error("[StatusPlugin] 获取核心系统指标失败: %s", e, exc_info=True)
             return None
+
+        cpu_t = None
+        try:
+            if self.config.get("show_temp", True) and hasattr(psutil, "sensors_temperatures"):
+                temps = psutil.sensors_temperatures()
+                for key in ['coretemp', 'k10temp', 'cpu_thermal', 'acpitz']:
+                    if key in temps and temps[key]:
+                        cpu_t = temps[key][0].current
+                        break
+        except Exception as e:
+            py_logger.warning("[StatusPlugin] 获取CPU温度失败: %s", e)
+
+        try:
+            disks = self._get_disk_usages()
+        except Exception as e:
+            py_logger.error("[StatusPlugin] 获取磁盘信息时发生异常: %s", e)
+            disks = []
+
+        return SystemMetrics(
+            cpu_percent=cpu_p, cpu_temp=cpu_t,
+            mem_total=mem.total, mem_used=mem.used, mem_percent=mem.percent,
+            net_sent=net.bytes_sent, net_recv=net.bytes_recv,
+            uptime=datetime.datetime.now() - self.boot_time,
+            disks=disks
+        )
 
 # --- 文本格式化器 ---
 class MetricsFormatter:
@@ -169,13 +168,17 @@ class MetricsFormatter:
         return f"⏱️ **已稳定运行**: {int(days)}天 {int(hours)}小时 {int(minutes)}分钟"
 
     def _format_cpu(self, m: SystemMetrics) -> str:
-        temp_str = f" ({m.cpu_temp:.1f}°C)" if m.cpu_temp else ""
+        temp_str = f" ({m.cpu_temp:.1f}°C)" if m.cpu_temp is not None else ""
         return f"--------------------\n🖥️ **CPU**{temp_str}\n   - **使用率**: {m.cpu_percent:.1f}%"
 
     def _format_memory(self, m: SystemMetrics) -> str:
         used_formatted = self._format_bytes(m.mem_used)
         total_formatted = self._format_bytes(m.mem_total)
-        return f"""--------------------\n💾 **内存**\n   - **使用率**: {m.mem_percent:.1f}%\n   - **已使用**: {used_formatted} / {total_formatted}"""
+        return (
+            "--------------------\n💾 **内存**\n"
+            f"   - **使用率**: {m.mem_percent:.1f}%\n"
+            f"   - **已使用**: {used_formatted} / {total_formatted}"
+        )
 
     def _format_disks(self, disks: List[DiskUsage]) -> str:
         if not disks:
@@ -187,7 +190,11 @@ class MetricsFormatter:
         return "--------------------\n" + "\n--------------------\n".join(disk_parts)
 
     def _format_network(self, m: SystemMetrics) -> str:
-        return f"""--------------------\n🌐 **网络I/O (自启动)**\n   - **总上传**: {self._format_bytes(m.net_sent)}\n   - **总下载**: {self._format_bytes(m.net_recv)}"""
+        return (
+            "--------------------\n🌐 **网络I/O (自启动)**\n"
+            f"   - **总上传**: {self._format_bytes(m.net_sent)}\n"
+            f"   - **总下载**: {self._format_bytes(m.net_recv)}"
+        )
 
     @classmethod
     def _format_bytes(cls, byte_count: int) -> str:
@@ -201,14 +208,14 @@ class MetricsFormatter:
     @staticmethod
     def _escape_path(path: str) -> str:
         # 防止路径中出现格式污染字符
-        return path.replace('`', '').replace('*', '')
+        return path.replace('`', '').replace('*', '').replace('\n', '').replace('\r', '')
 
 # --- AstrBot 插件主类 ---
 @register(
     name="astrabot_plugin_status",
     author="riceshowerx & AstrBot Assistant",
     desc="以文本形式查询服务器的实时状态 (已加固安全性)",
-    version="3.1.4",
+    version="3.1.5",
     repo="https://github.com/riceshowerX/astrbot_plugin_status"
 )
 class ServerStatusPlugin(Star):
@@ -224,11 +231,9 @@ class ServerStatusPlugin(Star):
         self._lock = asyncio.Lock()
 
     def _validate_config(self, config: AstrBotConfig) -> AstrBotConfig:
-        # 严格校验配置参数
         checked = {}
         try:
             checked['cache_duration'] = int(config.get('cache_duration', 5))
-            # 限制范围
             if checked['cache_duration'] < 0 or checked['cache_duration'] > 3600:
                 checked['cache_duration'] = 5
         except Exception:
@@ -257,7 +262,7 @@ class ServerStatusPlugin(Star):
     @event_filter.command("status", alias={"服务器状态", "状态", "zt", "s"})
     async def handle_server_status(self, event: AstrMessageEvent):
         now = time.time()
-        async with self._lock:  # 防止高并发下缓存竞争
+        async with self._lock:
             if self.cache_duration > 0 and self._cache and (now - self._cache_timestamp < self.cache_duration):
                 yield event.plain_result(self._cache)
                 return
@@ -267,7 +272,6 @@ class ServerStatusPlugin(Star):
             try:
                 if self.collector is None:
                     self.collector = MetricsCollector(self.config)
-                # 最大超时20秒，防御极端采集阻塞
                 metrics = await asyncio.wait_for(asyncio.to_thread(self.collector.collect), timeout=20)
                 if metrics is None:
                     yield event.plain_result("抱歉，获取核心服务器指标时发生错误，请检查日志。")
