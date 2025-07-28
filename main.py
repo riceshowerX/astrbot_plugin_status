@@ -155,12 +155,6 @@ class MetricsFormatter:
 )
 class ServerStatusPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
-        """
-        构造函数。
-        插件的核心逻辑在此初始化。
-        【关键修复】：移除了此处的 logger 调用，因为它会在框架赋予 self.name 属性前执行，导致 AttributeError。
-        框架本身会在插件成功加载后打印标准日志，因此无需在此处手动记录。
-        """
         super().__init__(context)
         self.context = context
         self.config = config
