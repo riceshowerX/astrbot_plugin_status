@@ -1,4 +1,4 @@
-# main.py (V3.1.1 修复命名空间冲突)
+# main.py (V3.1.2 - 全面遵循 AstrBot 框架规范)
 
 import psutil
 import datetime
@@ -10,22 +10,26 @@ from dataclasses import dataclass, field
 
 # 导入 AstrBot 官方 API
 from astrbot.api.star import Star, register, Context
-# ===================================================================
-# 核心修正：使用 'as' 关键字为导入的 filter 模块指定别名，避免与内置函数冲突
 from astrbot.api.event import filter as event_filter, AstrMessageEvent
-# ===================================================================
 from astrbot.api import logger, AstrBotConfig
 
 # --- 数据契约 ---
 @dataclass(frozen=True)
 class DiskUsage:
-    path: str; total: int; used: int; percent: float
+    path: str
+    total: int
+    used: int
+    percent: float
 
 @dataclass(frozen=True)
 class SystemMetrics:
-    cpu_percent: float; cpu_temp: Optional[float]
-    mem_total: int; mem_used: int; mem_percent: float
-    net_sent: int; net_recv: int
+    cpu_percent: float
+    cpu_temp: Optional[float]
+    mem_total: int
+    mem_used: int
+    mem_percent: float
+    net_sent: int
+    net_recv: int
     uptime: datetime.timedelta
     disks: List[DiskUsage] = field(default_factory=list)
 
@@ -33,99 +37,175 @@ class SystemMetrics:
 class MetricsCollector:
     def __init__(self, config: AstrBotConfig):
         self.config = config
-        try: self.boot_time = datetime.datetime.fromtimestamp(psutil.boot_time())
-        except Exception as e: logger.error(f"获取系统启动时间失败: {e}"); self.boot_time = datetime.datetime.now()
+        try:
+            self.boot_time = datetime.datetime.fromtimestamp(psutil.boot_time())
+        except Exception as e:
+            logger.error(f"获取系统启动时间失败: {e}")
+            self.boot_time = datetime.datetime.now()
+
     def _get_disk_usages(self) -> List[DiskUsage]:
-        disks = []; paths_to_check = self.config.get('disk_paths', [])
+        disks = []
+        paths_to_check = self.config.get('disk_paths', [])
+        
+        # 如果配置为空，则自动发现分区
         if not paths_to_check:
-            try: paths_to_check = [p.mountpoint for p in psutil.disk_partitions(all=False)]
-            except Exception as e: logger.warning(f"自动发现磁盘分区失败: {e}"); paths_to_check = ['C:\\' if platform.system() == "Windows" else '/']
+            try:
+                paths_to_check = [p.mountpoint for p in psutil.disk_partitions(all=False)]
+            except Exception as e:
+                logger.warning(f"自动发现磁盘分区失败，将使用默认路径: {e}")
+                paths_to_check = ['C:\\' if platform.system() == "Windows" else '/']
+        
         for path in paths_to_check:
             try:
                 usage = psutil.disk_usage(path)
                 disks.append(DiskUsage(path=path, total=usage.total, used=usage.used, percent=usage.percent))
-            except Exception as e: logger.warning(f"获取磁盘路径 '{path}' 信息失败: {e}")
+            except Exception as e:
+                logger.warning(f"获取磁盘路径 '{path}' 信息失败: {e}")
         return disks
+
     def collect(self) -> Optional[SystemMetrics]:
-        try: cpu_p, mem, net = psutil.cpu_percent(interval=1), psutil.virtual_memory(), psutil.net_io_counters()
-        except Exception as e: logger.error(f"获取核心系统指标失败: {e}", exc_info=True); return None
+        try:
+            # psutil 的一些调用是阻塞的，将在异步任务中运行
+            cpu_p = psutil.cpu_percent(interval=1)
+            mem = psutil.virtual_memory()
+            net = psutil.net_io_counters()
+        except Exception as e:
+            logger.error(f"获取核心系统指标失败: {e}", exc_info=True)
+            return None
+
         cpu_t = None
-        if self.config.get("show_temp", True) and platform.system() == "Linux":
+        if self.config.get("show_temp", True) and hasattr(psutil, "sensors_temperatures"):
             try:
                 temps = psutil.sensors_temperatures()
-                for key in ['coretemp', 'k10temp', 'cpu_thermal']:
-                    if key in temps and temps[key]: cpu_t = temps[key][0].current; break
-            except Exception: pass
+                # 遍历常见的CPU温度键
+                for key in ['coretemp', 'k10temp', 'cpu_thermal', 'acpitz']:
+                    if key in temps and temps[key]:
+                        cpu_t = temps[key][0].current
+                        break
+            except Exception:
+                pass  # 获取温度失败是常见情况，静默处理
+
         return SystemMetrics(
-            cpu_percent=cpu_p, cpu_temp=cpu_t, mem_total=mem.total, mem_used=mem.used, mem_percent=mem.percent,
-            net_sent=net.bytes_sent, net_recv=net.bytes_recv, uptime=datetime.datetime.now() - self.boot_time,
+            cpu_percent=cpu_p, cpu_temp=cpu_t,
+            mem_total=mem.total, mem_used=mem.used, mem_percent=mem.percent,
+            net_sent=net.bytes_sent, net_recv=net.bytes_recv,
+            uptime=datetime.datetime.now() - self.boot_time,
             disks=self._get_disk_usages()
         )
 
 # --- 文本格式化器 ---
 class MetricsFormatter:
     _BYTE_LABELS: Dict[int, str] = {0: ' B', 1: ' KB', 2: ' MB', 3: ' GB', 4: ' TB'}
+
     def format(self, metrics: SystemMetrics) -> str:
         parts = [
-            "💻 **服务器实时状态**", "--------------------", self._format_uptime(metrics.uptime),
-            self._format_cpu(metrics), self._format_memory(metrics), self._format_disks(metrics.disks),
+            "💻 **服务器实时状态**",
+            "--------------------",
+            self._format_uptime(metrics.uptime),
+            self._format_cpu(metrics),
+            self._format_memory(metrics),
+            self._format_disks(metrics.disks),
             self._format_network(metrics),
         ]
-        return "\n".join(filter(None, parts)) # 这里的 filter 现在是安全的，指向Python内置函数
+        return "\n".join(filter(None, parts))
+
     def _format_uptime(self, uptime: datetime.timedelta) -> str:
-        days, rem = divmod(uptime.total_seconds(), 86400); hours, rem = divmod(rem, 3600); minutes, _ = divmod(rem, 60)
+        days, rem = divmod(uptime.total_seconds(), 86400)
+        hours, rem = divmod(rem, 3600)
+        minutes, _ = divmod(rem, 60)
         return f"⏱️ **已稳定运行**: {int(days)}天 {int(hours)}小时 {int(minutes)}分钟"
+
     def _format_cpu(self, m: SystemMetrics) -> str:
-        temp = f"({m.cpu_temp:.1f}°C)" if m.cpu_temp else ""; return f"--------------------\n🖥️ **CPU** {temp}\n   - **使用率**: {m.cpu_percent:.1f}%"
+        temp_str = f" ({m.cpu_temp:.1f}°C)" if m.cpu_temp else ""
+        return f"--------------------\n🖥️ **CPU**{temp_str}\n   - **使用率**: {m.cpu_percent:.1f}%"
+
     def _format_memory(self, m: SystemMetrics) -> str:
-        return f"""--------------------\n💾 **内存**\n   - **使用率**: {m.mem_percent:.1f}%\n   - **已使用**: {self._format_bytes(m.mem_used)} / {self._format_bytes(m.mem_total)}"""
+        used_formatted = self._format_bytes(m.mem_used)
+        total_formatted = self._format_bytes(m.mem_total)
+        return f"""--------------------\n💾 **内存**\n   - **使用率**: {m.mem_percent:.1f}%\n   - **已使用**: {used_formatted} / {total_formatted}"""
+
     def _format_disks(self, disks: List[DiskUsage]) -> str:
-        if not disks: return ""
-        disk_parts = [f"""💿 **磁盘 ({d.path})**\n   - **使用率**: {d.percent:.1f}%\n   - **已使用**: {self._format_bytes(d.used)} / {self._format_bytes(d.total)}""" for d in disks]
+        if not disks:
+            return ""
+        disk_parts = [
+            f"""💿 **磁盘 ({d.path})**\n   - **使用率**: {d.percent:.1f}%\n   - **已使用**: {self._format_bytes(d.used)} / {self._format_bytes(d.total)}"""
+            for d in disks
+        ]
         return "--------------------\n" + "\n--------------------\n".join(disk_parts)
+
     def _format_network(self, m: SystemMetrics) -> str:
         return f"""--------------------\n🌐 **网络I/O (自启动)**\n   - **总上传**: {self._format_bytes(m.net_sent)}\n   - **总下载**: {self._format_bytes(m.net_recv)}"""
+
     @classmethod
     def _format_bytes(cls, byte_count: int) -> str:
         if byte_count is None: return "N/A"
         power, n = 1024, 0
-        while byte_count >= power and n < len(cls._BYTE_LABELS) - 1: byte_count /= power; n += 1
+        while byte_count >= power and n < len(cls._BYTE_LABELS) - 1:
+            byte_count /= power
+            n += 1
         return f"{byte_count:.2f}{cls._BYTE_LABELS[n]}"
 
 # --- AstrBot 插件主类 (协调器) ---
 @register(
-    name="astrabot_plugin_status", 
-    author="riceshowerx", 
-    desc="以文本形式查询服务器的实时状态 (单文件S级架构)", 
-    version="3.1.1", # 版本号提升
+    name="astrabot_plugin_status",
+    author="riceshowerx",
+    desc="以文本形式查询服务器的实时状态 (已按规范修复)",
+    version="3.1.2",  # 版本号提升
     repo="https://github.com/riceshowerX/astrbot_plugin_status"
 )
 class ServerStatusPlugin(Star):
-    CACHE_DURATION: int = 5
-    def __init__(self, context: Context, config: Optional[AstrBotConfig] = None):
+    def __init__(self, context: Context, config: AstrBotConfig):
+        """
+        构造函数修正:
+        1. 签名遵循官方文档 (self, context, config)，config 由框架保证提供。
+        2. 直接使用 config 对象，不再需要防御性编程。
+        3. 从配置中读取缓存时间。
+        """
         super().__init__(context)
-        self.context, self.config = context, config if config is not None else AstrBotConfig({})
-        self.collector, self.formatter = MetricsCollector(self.config), MetricsFormatter()
-        self._cache: Optional[str] = None; self._cache_timestamp: float = 0.0
-        logger.info("服务器状态插件(v3.1.1)已成功加载。")
+        self.context = context
+        self.config = config
+        self.collector = MetricsCollector(self.config)
+        self.formatter = MetricsFormatter()
 
-    # ===================================================================
-    # 核心修正：使用别名 event_filter 来调用 command 装饰器
-    # ===================================================================
+        self._cache: Optional[str] = None
+        self._cache_timestamp: float = 0.0
+        # 从配置中读取缓存时间，如果未配置，则默认为 5 秒
+        self.cache_duration = self.config.get('cache_duration', 5)
+
+        logger.info(f"服务器状态插件(v3.1.2)已加载。缓存时间: {self.cache_duration}s")
+
     @event_filter.command("status", alias={"服务器状态", "状态", "zt", "s"})
     async def handle_server_status(self, event: AstrMessageEvent):
-        '''查询并显示当前服务器的详细运行状态'''
+        """
+        消息发送方式修正:
+        全面改用 'yield event.plain_result()' 的标准范式。
+        这符合 AstrBot 的“洋葱模型”，并将消息发送交由框架处理。
+        """
         now = time.time()
-        if self._cache and (now - self._cache_timestamp < self.CACHE_DURATION):
-            logger.info("从缓存中提供服务器状态。"); await event.send(event.plain_result(self._cache)); return
-        await event.send(event.plain_result("正在重新获取服务器状态，请稍候..."))
+        
+        # 检查缓存
+        if self.cache_duration > 0 and self._cache and (now - self._cache_timestamp < self.cache_duration):
+            logger.info("从缓存中提供服务器状态。")
+            yield event.plain_result(self._cache)
+            return
+
+        yield event.plain_result("正在重新获取服务器状态，请稍候...")
+        
         try:
+            # 将阻塞的I/O操作移至线程中执行，避免阻塞事件循环
             metrics = await asyncio.to_thread(self.collector.collect)
+            
             if metrics is None:
-                await event.send(event.plain_result("抱歉，获取核心服务器指标时发生错误，请检查日志。")); return
+                yield event.plain_result("抱歉，获取核心服务器指标时发生错误，请检查日志。")
+                return
+
             text_message = self.formatter.format(metrics)
+            
+            # 更新缓存
             self._cache, self._cache_timestamp = text_message, now
-            await event.send(event.plain_result(text_message))
+            
+            yield event.plain_result(text_message)
+            
         except Exception as e:
             logger.error(f"处理 status 指令时发生未知错误: {e}", exc_info=True)
-            await event.send(event.plain_result(f"抱歉，获取状态时出现未知错误，请联系管理员。"))
+            yield event.plain_result(f"抱歉，获取状态时出现未知错误，请联系管理员。")
