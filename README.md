@@ -2,7 +2,7 @@
 
 #  AstrBot 服务器状态插件 (astrabot_plugin_status)
 
-![Version](https://img.shields.io/badge/version-v1.0-blueviolet)![Author](https://img.shields.io/badge/author-riceshowerx-green)![Python](https://img.shields.io/badge/python-3.9+-blue.svg)![License](https://img.shields.io/badge/license-MIT-lightgrey)
+![Version](https://img.shields.io/badge/version-v1.1-blueviolet)![Author](https://img.shields.io/badge/author-riceshowerx-green)![Python](https://img.shields.io/badge/python-3.9+-blue.svg)![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 > **项目地址:** [**github.com/riceshowerX/astrbot_plugin_status**](https://github.com/riceshowerX/astrbot_plugin_status)
 
