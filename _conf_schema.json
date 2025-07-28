@@ -1,22 +1,49 @@
 {
-  "cache_duration": {
-    "type": "int",
-    "description": "服务器状态查询的缓存时间（秒）。设为0则禁用缓存。",
-    "default": 5,
-    "min": 0,
-    "max": 3600
+  "privacy_level": {
+    "type": "select",
+    "description": "【重要】信息披露的隐私级别。用于控制在公共场合下信息泄露的风险。",
+    "hint": "在公共群组中，强烈建议选择 'minimal' 以隐藏敏感路径和资源总量。",
+    "options": [
+      {
+        "label": "完整模式 (Full)",
+        "value": "full"
+      },
+      {
+        "label": "最小模式 (Minimal)",
+        "value": "minimal"
+      }
+    ],
+    "default": "full"
   },
   "disk_paths": {
     "type": "list",
     "editor_mode": true,
     "editor_language": "json",
-    "description": "要监控的磁盘路径列表。强烈建议在生产环境中显式配置以避免潜在的IO阻塞。若留空，则会自动检测并过滤掉网络磁盘后的本地分区。",
-    "hint": "示例：[\"/\", \"/home\", \"D:\\\\\"]",
-    "default": []
+    "description": "要监控的磁盘路径列表。支持简单路径或带别名的对象，用于信息脱敏。",
+    "hint": "示例: [\"/data\", {\"path\": \"/var/log\", \"display\": \"WebApp Logs\"}]",
+    "default": [],
+    "footer": "<strong>生产环境强烈建议显式配置此项</strong>，以避免自动发现潜在的不稳定磁盘导致IO阻塞。"
+  },
+  "collect_timeout": {
+    "type": "int",
+    "description": "数据采集的最长等待时间（秒）。用于防止因系统I/O繁忙导致插件无响应。",
+    "hint": "如果您的服务器磁盘性能较差或负载较高，可适当增加此值。",
+    "default": 25,
+    "min": 10,
+    "max": 120
+  },
+  "cache_duration": {
+    "type": "int",
+    "description": "状态查询结果的缓存有效时间（秒）。用于降低高频查询下的服务器负载。",
+    "hint": "设为 0 可禁用缓存。普通场景下无需修改。",
+    "default": 10,
+    "min": 0,
+    "max": 3600
   },
   "show_temp": {
     "type": "bool",
-    "description": "是否尝试显示CPU温度（仅在部分 Linux 系统和硬件上有效，无效时自动隐藏）。",
+    "description": "是否尝试显示CPU温度。对于多核CPU，将显示所有核心的平均温度。",
+    "hint": "此功能仅在部分受支持的硬件和操作系统上可用，无效时将自动隐藏。",
     "default": true
   }
 }
