@@ -1,4 +1,4 @@
-# AstrBot 服务器状态插件 v2.0
+# AstrBot 服务器状态插件 v3.0
 
 ![Version](https://img.shields.io/badge/version-v2.0-blue) ![Python](https://img.shields.io/badge/python-3.9+-blue.svg) ![License](https://img.shields.io/badge/license-MIT-lightgrey) ![AstrBot](https://img.shields.io/badge/AstrBot-≥1.0.0-green)
 
@@ -6,7 +6,7 @@
 
 一个为 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 打造的服务器状态监控插件，提供全面的系统指标监控和智能管理功能。
 
-## 🚀 v2.0 新特性
+## 🚀 v3.0 新特性
 
 ### 架构升级
 - **模块化设计** - 核心功能分离为独立模块，便于维护和扩展
