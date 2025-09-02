@@ -1,9 +1,9 @@
-
 import psutil
 import datetime
 import platform
 import asyncio
 import time
+import re
 from typing import Dict, Any, Optional, List, Set, Union, Tuple
 from dataclasses import dataclass, field
 import json
@@ -20,28 +20,98 @@ from astrbot.api import logger, AstrBotConfig
 def safe_disk_path(path: Any) -> bool:
     """
     Validates if the given path is a safe, absolute path for disk usage checks.
-    [v2.1] Note: On Windows, os.path.isabs() correctly handles both drive letters and UNC paths (e.g., \\share\disk).
+    Enhanced security checks for both Windows and Linux systems.
     """
     if not isinstance(path, str) or not path or len(path) > 1024:
         return False
+    
+    # Normalize path separators for consistent checking
+    normalized_path = path.replace('\\', '/')
+    
     if not os.path.isabs(path):
         return False
-    for c in ['..', '~', '\0', '*', '?', '|', '<', '>', '"']:
-        if c in path:
+    
+    # Enhanced security checks
+    forbidden_patterns = [
+        '..', '~', '\0', '*', '?', '|', '<', '>', '"',
+        '//', '\\\\', ':/', ':\\\\', ';', '$', '`'
+    ]
+    
+    for pattern in forbidden_patterns:
+        if pattern in path:
             return False
+    
+    # Check for path traversal attempts
+    if '../' in normalized_path or '/..' in normalized_path:
+        return False
+    
+    # Additional Windows-specific checks
+    if platform.system() == "Windows":
+        # Check for UNC path injection attempts
+        if normalized_path.startswith('//') and '..' in normalized_path:
+            return False
+        # Check for drive letter manipulation
+        if ':' in path and path.index(':') > 1:
+            return False
+    
     return True
 
 def is_running_in_container() -> bool:
     """Heuristic check for containerized environments like Docker."""
-    if os.path.exists('/.dockerenv'):
+    # Check for common container indicators
+    container_indicators = [
+        # Linux containers
+        '/.dockerenv',
+        '/.dockerinit',
+        # Container orchestrators
+        '/var/run/secrets/kubernetes.io',
+        '/run/secrets/kubernetes.io',
+        # Environment variables
+        'KUBERNETES_SERVICE_HOST',
+        'DOCKER_CONTAINER'
+    ]
+    
+    # Check filesystem indicators
+    for indicator in container_indicators[:2]:
+        if os.path.exists(indicator):
+            return True
+    
+    # Check cgroup for Linux containers
+    if platform.system() != "Windows":
+        try:
+            cgroup_paths = [
+                '/proc/1/cgroup',
+                '/proc/self/cgroup'
+            ]
+            for cgroup_path in cgroup_paths:
+                if os.path.exists(cgroup_path):
+                    with open(cgroup_path, 'rt', encoding='utf-8') as f:
+                        content = f.read()
+                        if any(keyword in content for keyword in ['docker', 'kubepods', 'containerd', 'lxc']):
+                            return True
+        except (FileNotFoundError, PermissionError, UnicodeDecodeError):
+            pass
+    
+    # Check environment variables
+    env_keys = os.environ.keys()
+    if any(key in env_keys for key in container_indicators[4:]):
         return True
-    try:
-        with open('/proc/1/cgroup', 'rt') as f:
-            for line in f:
-                if 'docker' in line or 'kubepods' in line or 'containerd' in line:
-                    return True
-    except FileNotFoundError:
-        pass # Not a Linux-based system with /proc
+    
+    # Windows container detection
+    if platform.system() == "Windows":
+        try:
+            # Check for Windows container specific environment variables
+            if os.environ.get('CONTAINER_RUNTIME') == 'docker':
+                return True
+            # Check for isolation in process tree
+            import subprocess
+            result = subprocess.run(['powershell', '-Command', 'Get-Process -Id 1 | Select-Object ProcessName'], 
+                                  capture_output=True, text=True, timeout=5)
+            if 'docker' in result.stdout.lower() or 'containerd' in result.stdout.lower():
+                return True
+        except (subprocess.TimeoutExpired, FileNotFoundError, PermissionError):
+            pass
+    
     return False
 
 # --- 数据契约 (Data Contracts with Fault Tolerance) ---
@@ -290,13 +360,22 @@ class MetricsFormatter:
 
     @staticmethod
     def _escape_path(path: str) -> str:
-        # Simple sanitization for display. For stronger security, use a proper library.
-        return path.replace('`', '').replace('*', '').replace('_', r'\_').replace('\n', '')
+        """Enhanced path sanitization to prevent Markdown injection."""
+        # Remove all Markdown formatting characters
+        escape_chars = ['`', '*', '_', '{', '}', '[', ']', '(', ')', '#', '+', '-', '.', '!', '|']
+        for char in escape_chars:
+            path = path.replace(char, '')
+        # Remove newlines and excessive spaces
+        path = path.replace('\n', ' ').replace('\r', ' ').strip()
+        # Limit length for display safety
+        if len(path) > 50:
+            path = path[:47] + '...'
+        return path
 
 
 # --- AstrBot Plugin Main Class (Final Version) ---
 @register(name="astrabot_plugin_status", author="riceshowerx & AstrBot Assistant",
-          desc="[v2.1] 工业级状态插件. 警告: 请务必配置命令权限, 并锁定psutil版本!", version="2.1",
+          desc="[v2.2] 工业级状态插件. 警告: 请务必配置命令权限, 并锁定psutil版本!", version="2.2",
           repo="https://github.com/your-username/your-repo")
 class ServerStatusPlugin(Star):
     
@@ -311,7 +390,7 @@ class ServerStatusPlugin(Star):
         
         # --- Critical startup checks and initialization ---
         logger.info("="*50)
-        logger.info("[StatusPlugin] Initializing Server Status Plugin v2.1...")
+        logger.info("[StatusPlugin] Initializing Server Status Plugin v2.2...")
         self.is_containerized = is_running_in_container()
 
         try:
@@ -329,6 +408,7 @@ class ServerStatusPlugin(Star):
                        "[StatusPlugin] 1. [CRITICAL] ACL: Ensure this 'status' command has strict access control!\n"
                        "[StatusPlugin] 2. [CRITICAL] DEPS: Pin the 'psutil' library version for supply chain security.\n"
                        "[StatusPlugin] 3. [RECOMMENDED] LOGS: Confirm log rotation is configured for the bot.\n"
+                       "[StatusPlugin] 4. [SECURITY] Enhanced path validation and container detection implemented.\n"
                        "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n")
         logger.info("[StatusPlugin] ✨ Plugin loaded. Cache: %ds, Privacy: '%s', Timeout: %ds",
                     self.plugin_config['cache_duration'], self.plugin_config['privacy_level'], self.plugin_config['collect_timeout'])
