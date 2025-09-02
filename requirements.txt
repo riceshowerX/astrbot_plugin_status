@@ -1,1 +1,15 @@
-psutil
+# AstrBot Server Status Plugin 依赖项
+# 版本锁定建议: 在生产环境中固定版本以确保稳定性
+
+psutil>=5.9.0,<6.0.0  # 系统监控库 - 必须固定版本
+
+# 开发依赖 (可选)
+# pytest>=7.0.0      # 测试框架
+# black>=23.0.0      # 代码格式化
+# flake8>=6.0.0      # 代码检查
+# mypy>=1.0.0        # 类型检查
+
+# 安全建议:
+# 1. 定期检查依赖项安全漏洞: pip-audit
+# 2. 在生产环境使用: pip freeze > requirements.txt
+# 3. 使用虚拟环境隔离依赖

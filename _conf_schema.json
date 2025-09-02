@@ -3,7 +3,37 @@
     "type": "string",
     "description": "【重要】信息披露的隐私级别。用于控制在公共场合下信息泄露的风险。",
     "hint": "请输入 'full' 或 'minimal'。在公共群组中，强烈建议填写 'minimal'。",
-    "default": "full"
+    "default": "full",
+    "enum": ["full", "minimal"]
+  },
+  "cache_duration": {
+    "type": "int",
+    "description": "状态查询结果的缓存有效时间（秒）。用于降低高频查询下的服务器负载。",
+    "hint": "设为 0 可禁用缓存。普通场景下无需修改。",
+    "default": 10,
+    "min": 0,
+    "max": 3600
+  },
+  "collect_timeout": {
+    "type": "int",
+    "description": "数据采集的最长等待时间（秒）。用于防止因系统I/O繁忙导致插件无响应。",
+    "hint": "如果您的服务器磁盘性能较差或负载较高，可适当增加此值。",
+    "default": 25,
+    "min": 5,
+    "max": 120
+  },
+  "show_temp": {
+    "type": "bool",
+    "description": "是否尝试显示CPU温度。对于多核CPU，将显示所有核心的平均温度。",
+    "hint": "此功能仅在部分受支持的硬件和操作系统上可用，无效时将自动隐藏。",
+    "default": true
+  },
+  "output_format": {
+    "type": "string",
+    "description": "状态信息的输出格式。支持Markdown、纯文本和JSON格式。",
+    "hint": "选择适合您聊天环境的输出格式。",
+    "default": "markdown",
+    "enum": ["markdown", "plain", "json"]
   },
   "disk_paths": {
     "type": "list",
@@ -14,26 +44,58 @@
     "default": [],
     "footer": "<strong>生产环境强烈建议显式配置此项</strong>，以避免自动发现潜在的不稳定磁盘导致IO阻塞。"
   },
-  "collect_timeout": {
-    "type": "int",
-    "description": "数据采集的最长等待时间（秒）。用于防止因系统I/O繁忙导致插件无响应。",
-    "hint": "如果您的服务器磁盘性能较差或负载较高，可适当增加此值。",
-    "default": 25,
-    "min": 10,
-    "max": 120
-  },
-  "cache_duration": {
-    "type": "int",
-    "description": "状态查询结果的缓存有效时间（秒）。用于降低高频查询下的服务器负载。",
-    "hint": "设为 0 可禁用缓存。普通场景下无需修改。",
-    "default": 10,
-    "min": 0,
-    "max": 3600
-  },
-  "show_temp": {
+  "auto_discover_disks": {
     "type": "bool",
-    "description": "是否尝试显示CPU温度。对于多核CPU，将显示所有核心的平均温度。",
-    "hint": "此功能仅在部分受支持的硬件和操作系统上可用，无效时将自动隐藏。",
+    "description": "是否自动发现未配置的磁盘分区。禁用后只监控配置的磁盘路径。",
+    "hint": "建议在生产环境中禁用自动发现，只监控重要磁盘。",
     "default": true
+  },
+  "max_disk_count": {
+    "type": "int",
+    "description": "最大监控磁盘数量。防止因磁盘过多导致性能问题。",
+    "hint": "根据服务器实际情况调整，建议不超过20个。",
+    "default": 10,
+    "min": 1,
+    "max": 50
+  },
+  "enable_network_stats": {
+    "type": "bool",
+    "description": "是否启用网络统计信息采集。",
+    "hint": "禁用后可减少采集开销，但会缺少网络信息。",
+    "default": true
+  },
+  "enable_process_stats": {
+    "type": "bool",
+    "description": "是否启用进程统计信息采集。",
+    "hint": "进程统计需要遍历所有进程，可能影响性能。",
+    "default": true
+  },
+  "enable_system_info": {
+    "type": "bool",
+    "description": "是否启用系统信息采集（运行时间、平台信息等）。",
+    "hint": "基本系统信息，开销很小，建议保持启用。",
+    "default": true
+  },
+  "enable_detailed_errors": {
+    "type": "bool",
+    "description": "是否显示详细的错误信息。",
+    "hint": "禁用后只显示基本错误，增加安全性但减少调试信息。",
+    "default": true
+  },
+  "max_thread_workers": {
+    "type": "int",
+    "description": "数据采集线程池的最大工作线程数。",
+    "hint": "根据服务器CPU核心数调整，建议1-5之间。",
+    "default": 3,
+    "min": 1,
+    "max": 10
+  },
+  "collection_interval": {
+    "type": "int",
+    "description": "后台数据采集的时间间隔（秒）。",
+    "hint": "定期采集系统快照的时间间隔，0表示禁用定期采集。",
+    "default": 30,
+    "min": 0,
+    "max": 300
   }
 }

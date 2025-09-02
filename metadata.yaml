@@ -1,15 +1,49 @@
-
 # 插件的唯一识别名，请保持其唯一性
 name: astrbot_plugin_status
 
 # 插件的简短描述，将显示在插件商店和管理页面
-desc: 查询运行Bot的服务器的CPU、内存、磁盘和网络状态。
+desc: 工业级服务器状态监控插件 - 支持多格式输出和智能缓存
 
 # 插件版本号，建议遵循语义化版本规范
-version: v1.0
+version: v2.0.0
 
 # 作者名
-author: riceshowerx
+author: riceshowerx & AstrBot Assistant
 
 # 插件的仓库地址，方便他人查看源码或贡献
 repo: https://github.com/riceshowerX/astrbot_plugin_status
+
+# 依赖项声明
+dependencies:
+  - psutil>=5.9.0
+
+# 兼容的AstrBot版本
+astrbot_version: ">=1.0.0"
+
+# 支持的平台
+platforms:
+  - linux
+  - windows
+  - macos
+
+# 分类标签
+tags:
+  - monitoring
+  - system
+  - status
+  - server
+  - performance
+
+# 插件图标 (可选)
+# icon: icon.png
+
+# 许可证信息
+license: MIT
+
+# 支持的语言
+languages:
+  - zh-CN
+  - en-US
+
+# 更新日志链接
+changelog: https://github.com/riceshowerX/astrbot_plugin_status/releases
