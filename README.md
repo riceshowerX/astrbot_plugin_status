@@ -4,7 +4,7 @@
 
 > **项目地址:** [**github.com/riceshowerX/astrbot_plugin_status**](https://github.com/riceshowerX/astrbot_plugin_status)
 
-一个为 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 打造的工业级服务器状态监控插件，提供全面的系统指标监控和智能管理功能。
+一个为 [AstrBot](https://github.com/AstrBotDevs/AstrBot) 打造的服务器状态监控插件，提供全面的系统指标监控和智能管理功能。
 
 ## 🚀 v3.0 新特性
 
