@@ -761,5 +761,5 @@ class ServerStatusPlugin(Star):
 
 # 插件入口
 if __name__ == "__main__":
-    print("AstrBot Server Status Plugin v3.0")
+    print("AstrBot Server Status Plugin v4.0.0")
     print("This plugin must be loaded within AstrBot environment.")
