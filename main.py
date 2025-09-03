@@ -664,9 +664,9 @@ class ServerStatusPlugin(Star):
                 logger.error("Data collection timed out")
                 # 超时时尝试使用旧缓存（如果可用）
                 if self._cache and self._cache_level != CacheLevel.FAILED:
-                    yield event.plain_result(f"⚠️ 采集超时，使用缓存数据:
+                    yield event.plain_result(f"""⚠️ 采集超时，使用缓存数据:
 
-{self._cache}")
+{self._cache}""")
                 else:
                     yield event.plain_result(error_msg)
             except Exception as e:
@@ -674,9 +674,9 @@ class ServerStatusPlugin(Star):
                 logger.error("Status handling error: %s", e)
                 # 错误时尝试使用旧缓存
                 if self._cache and self._cache_level != CacheLevel.FAILED:
-                    yield event.plain_result(f"⚠️ 采集错误，使用缓存数据:
+                    yield event.plain_result(f"""⚠️ 采集错误，使用缓存数据:
 
-{self._cache}")
+{self._cache}""")
                 else:
                     yield event.plain_result(error_msg)
 
