@@ -2,10 +2,10 @@
 name: astrbot_plugin_status
 
 # 插件的简短描述，将显示在插件商店和管理页面
-desc: 服务器状态监控插件 - 支持多格式输出和智能缓存
+desc: 企业级服务器状态监控插件 - 支持并行采集、智能缓存和健康检查
 
 # 插件版本号，建议遵循语义化版本规范
-version: v2.0.0
+version: v4.0.0
 
 # 作者名
 author: riceshowerx & AstrBot Assistant
